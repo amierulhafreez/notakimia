@@ -380,17 +380,6 @@ export const GoogleLoginModal: React.FC<Props> = ({
                 >
                   Teroka Laman Dahulu Tanpa Log Masuk →
                 </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setManualEmailInput('amierulhafreez@gmail.com');
-                    setShowManualInput(true);
-                  }}
-                  className="text-[11px] text-indigo-600/70 hover:text-indigo-800 hover:underline flex items-center gap-1 font-semibold cursor-pointer transition-colors mt-0.5"
-                >
-                  <span>👑 Log Masuk Pentadbir (Cikgu Hafreez)</span>
-                </button>
               </div>
             </div>
           ) : (
