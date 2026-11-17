@@ -241,7 +241,7 @@ export const GoogleLoginModal: React.FC<Props> = ({
 
             <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 border border-white/15 text-[11px] font-bold text-sky-300 mb-1.5">
               <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-              <span>{step === 'google_auth' ? 'Pengesahan Akaun Sebenar' : 'Pendaftaran Profil Murid'}</span>
+              <span>{step === 'google_auth' ? 'Akaun Google' : 'Pendaftaran Profil Murid'}</span>
             </div>
 
             <h2 className="text-xl sm:text-2xl font-black tracking-tight text-white">
@@ -249,7 +249,7 @@ export const GoogleLoginModal: React.FC<Props> = ({
             </h2>
             <p className="text-xs text-slate-300 mt-1 max-w-sm leading-relaxed">
               {step === 'google_auth'
-                ? 'Gunakan akaun Google sebenar anda (Gmail atau ID DELIMa KPM) seperti dalam aplikasi rasmi eRPH.'
+                ? 'Gunakan akaun Google anda (Gmail atau ID DELIMa KPM) untuk mengakses topik percuma dan menyimpan rekod ulangkaji.'
                 : 'Daftarkan nama dan sekolah anda untuk paparan ranking umum kebangsaan dan rekod pencapaian anda.'}
             </p>
           </div>
@@ -324,55 +324,11 @@ export const GoogleLoginModal: React.FC<Props> = ({
                     />
                   </svg>
                 )}
-                <span>{isGoogleLoading ? 'Menyambung ke Akaun Google...' : 'Log Masuk dengan Google (Akaun Sebenar)'}</span>
+                <span>{isGoogleLoading ? 'Menyambung ke Akaun Google...' : 'Log Masuk dengan Google'}</span>
               </button>
 
-              <div className="flex items-center gap-2 my-1">
-                <div className="flex-1 h-px bg-slate-200" />
-                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Atau</span>
-                <div className="flex-1 h-px bg-slate-200" />
-              </div>
-
-              {/* Alternate / Fallback Email Entry */}
-              {!showManualInput ? (
-                <button
-                  type="button"
-                  onClick={() => setShowManualInput(true)}
-                  className="w-full py-2 text-center text-xs text-indigo-600 hover:text-indigo-800 font-bold cursor-pointer transition-colors"
-                >
-                  Log masuk menggunakan alamat emel DELIMa / Gmail secara manual →
-                </button>
-              ) : (
-                <form onSubmit={handleManualEmailSubmit} className="space-y-3 p-3.5 rounded-2xl bg-slate-50 border border-slate-200 animate-in fade-in">
-                  <label className="block text-[11px] font-bold text-slate-700">
-                    Alamat Emel Google Anda:
-                  </label>
-                  <div className="relative">
-                    <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-                    <input
-                      type="email"
-                      value={manualEmailInput}
-                      onChange={(e) => {
-                        setManualEmailInput(e.target.value);
-                        setErrorMsg('');
-                      }}
-                      placeholder="nama@gmail.com atau @moe-dl.edu.my"
-                      className="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500/20"
-                      required
-                    />
-                  </div>
-                  <button
-                    type="submit"
-                    className="w-full py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800 transition-all cursor-pointer flex items-center justify-center gap-1.5"
-                  >
-                    <span>Sahkan Emel & Teruskan</span>
-                    <ArrowRight className="w-3.5 h-3.5" />
-                  </button>
-                </form>
-              )}
-
               {/* Quick links */}
-              <div className="flex flex-col items-center gap-2 pt-1">
+              <div className="flex flex-col items-center gap-2 pt-2">
                 <button
                   type="button"
                   onClick={onClose}
