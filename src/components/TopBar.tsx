@@ -14,6 +14,7 @@ import {
   KeyRound,
   ShieldCheck,
   ChevronDown,
+  Compass,
 } from 'lucide-react';
 import { Chapter } from '../types/nota';
 import { GoogleUser } from '../types/auth';
@@ -26,6 +27,7 @@ interface Props {
   onGoHome: () => void;
   onOpenSearch: () => void;
   onOpenExamMode?: () => void;
+  onOpenUserGuide?: () => void;
   currentUser: GoogleUser | null;
   onOpenLoginModal: () => void;
   onOpenAccessModal: () => void;
@@ -40,6 +42,7 @@ export const TopBar: React.FC<Props> = ({
   onGoHome,
   onOpenSearch,
   onOpenExamMode,
+  onOpenUserGuide,
   currentUser,
   onOpenLoginModal,
   onOpenAccessModal,
@@ -127,6 +130,19 @@ export const TopBar: React.FC<Props> = ({
 
         {/* Right: Ecosystem, Contact & User Authentication */}
         <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
+          {/* Panduan Penggunaan Liquid Glass Pill */}
+          {onOpenUserGuide && (
+            <button
+              type="button"
+              onClick={onOpenUserGuide}
+              className="liquid-glass-pill flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full text-xs font-bold text-slate-800 cursor-pointer"
+              title="Panduan Navigasi & Penggunaan Web App"
+            >
+              <Compass className="w-3.5 h-3.5 text-sky-600" />
+              <span className="hidden md:inline">Panduan</span>
+            </button>
+          )}
+
           {onOpenExamMode && (
             <button
               type="button"

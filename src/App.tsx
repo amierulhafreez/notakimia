@@ -14,6 +14,7 @@ import { ExamModeModal } from './components/modals/ExamModeModal';
 import { GoogleLoginModal } from './components/modals/GoogleLoginModal';
 import { AccessCodeModal } from './components/modals/AccessCodeModal';
 import { AdminDashboardModal } from './components/admin/AdminDashboardModal';
+import { UserGuideModal } from './components/modals/UserGuideModal';
 import { Send, MessageCircle, Sparkles } from 'lucide-react';
 import { ExamMode } from './data/examQuestions';
 import {
@@ -53,6 +54,7 @@ export const App: React.FC = () => {
 
   // Quick Reference & Feature Modals state
   const [searchModalOpen, setSearchModalOpen] = useState(false);
+  const [userGuideOpen, setUserGuideOpen] = useState(false);
   const [activeQuickRef, setActiveQuickRef] = useState<'periodic' | 'electrode' | 'ion' | 'formula' | null>(null);
   const [activeSimulationId, setActiveSimulationId] = useState<string | null>(null);
   const [activeExpressChapterId, setActiveExpressChapterId] = useState<string | null>(null);
@@ -78,6 +80,7 @@ export const App: React.FC = () => {
       }
       if (e.key === 'Escape') {
         setSearchModalOpen(false);
+        setUserGuideOpen(false);
         setActiveQuickRef(null);
         setActiveSimulationId(null);
         setActiveExpressChapterId(null);
@@ -286,6 +289,7 @@ export const App: React.FC = () => {
         }}
         onOpenSearch={() => setSearchModalOpen(true)}
         onOpenExamMode={() => handleOpenExamMode('ALL')}
+        onOpenUserGuide={() => setUserGuideOpen(true)}
         currentUser={currentUser}
         onOpenLoginModal={() => {
           setLoginTriggerReason('Log masuk dengan akaun Google anda untuk mula membaca topik percuma, mengumpul XP, dan membuka lencana.');
@@ -394,6 +398,15 @@ export const App: React.FC = () => {
         isOpen={searchModalOpen}
         onClose={() => setSearchModalOpen(false)}
         onSelectResult={handleSelectSearchResult}
+      />
+
+      {/* User Guide Modal (Panduan Penggunaan Pelajar) */}
+      <UserGuideModal
+        isOpen={userGuideOpen}
+        onClose={() => setUserGuideOpen(false)}
+        onOpenSearch={() => setSearchModalOpen(true)}
+        onOpenExamMode={() => handleOpenExamMode('ALL')}
+        onOpenQuickRef={(ref) => setActiveQuickRef(ref)}
       />
 
       {/* Quick Reference Modals */}
