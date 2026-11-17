@@ -97,10 +97,10 @@ export const UserGuideModal: React.FC<Props> = ({
           </div>
 
           {/* Liquid Glass Navigation Tab Switcher */}
-          <div className="mt-5 flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
+          <div className="mt-4 flex items-center gap-1 sm:gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
             <button
               onClick={() => setActiveTab('mula')}
-              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+              className={`px-2.5 sm:px-3.5 py-1.5 rounded-full text-[11px] sm:text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1 sm:gap-1.5 shrink-0 ${
                 activeTab === 'mula'
                   ? 'liquid-glass-pill text-slate-900 shadow-md font-black'
                   : 'bg-white/10 text-white/80 hover:bg-white/20 hover:text-white'
@@ -111,7 +111,7 @@ export const UserGuideModal: React.FC<Props> = ({
 
             <button
               onClick={() => setActiveTab('interaktif')}
-              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+              className={`px-2.5 sm:px-3.5 py-1.5 rounded-full text-[11px] sm:text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1 sm:gap-1.5 shrink-0 ${
                 activeTab === 'interaktif'
                   ? 'liquid-glass-pill text-slate-900 shadow-md font-black'
                   : 'bg-white/10 text-white/80 hover:bg-white/20 hover:text-white'
@@ -123,7 +123,7 @@ export const UserGuideModal: React.FC<Props> = ({
 
             <button
               onClick={() => setActiveTab('exam')}
-              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+              className={`px-2.5 sm:px-3.5 py-1.5 rounded-full text-[11px] sm:text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1 sm:gap-1.5 shrink-0 ${
                 activeTab === 'exam'
                   ? 'liquid-glass-pill text-slate-900 shadow-md font-black'
                   : 'bg-white/10 text-white/80 hover:bg-white/20 hover:text-white'
@@ -135,7 +135,7 @@ export const UserGuideModal: React.FC<Props> = ({
 
             <button
               onClick={() => setActiveTab('akses')}
-              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+              className={`px-2.5 sm:px-3.5 py-1.5 rounded-full text-[11px] sm:text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1 sm:gap-1.5 shrink-0 ${
                 activeTab === 'akses'
                   ? 'liquid-glass-pill text-slate-900 shadow-md font-black'
                   : 'bg-white/10 text-white/80 hover:bg-white/20 hover:text-white'
@@ -147,7 +147,7 @@ export const UserGuideModal: React.FC<Props> = ({
 
             <button
               onClick={() => setActiveTab('faq')}
-              className={`px-3 sm:px-4 py-1.5 rounded-full text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+              className={`px-2.5 sm:px-3.5 py-1.5 rounded-full text-[11px] sm:text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1 sm:gap-1.5 shrink-0 ${
                 activeTab === 'faq'
                   ? 'liquid-glass-pill text-slate-900 shadow-md font-black'
                   : 'bg-white/10 text-white/80 hover:bg-white/20 hover:text-white'
