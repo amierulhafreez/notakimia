@@ -57,7 +57,7 @@ export const AchievementBoard: React.FC<Props> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'pencapaian' | 'juara'>('pencapaian');
   const isAdmin = currentUser?.role === 'admin' || (currentUser && isAdminEmail(currentUser.email));
-  const [isBadgesMinimized, setIsBadgesMinimized] = useState<boolean>(false);
+  const [isBadgesMinimized, setIsBadgesMinimized] = useState<boolean>(true);
   const [badgePage, setBadgePage] = useState<number>(0);
   const [studentName, setStudentName] = useState(() => {
     return localStorage.getItem('nota_kimia_student_name') || 'Calon SPM Cemerlang';
@@ -754,7 +754,7 @@ export const AchievementBoard: React.FC<Props> = ({
                 {/* Minimize / Expand Toggle Button */}
                 <button
                   onClick={() => setIsBadgesMinimized(!isBadgesMinimized)}
-                  className="px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer bg-white text-indigo-900 hover:bg-indigo-50 border border-indigo-200/90 shadow-2xs active:scale-95"
+                  className="px-3.5 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer liquid-glass-pill text-indigo-950 active:scale-95"
                   title={isBadgesMinimized ? "Kembangkan paparan lencana" : "Kecilkan (Minimize) paparan lencana"}
                 >
                   {isBadgesMinimized ? (
