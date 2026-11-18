@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   Search,
   ExternalLink,
-  BookMarked,
   Home,
   ChevronRight,
   Sparkles,
@@ -73,14 +72,19 @@ export const TopBar: React.FC<Props> = ({
             onClick={onGoHome}
             className="flex items-center gap-2.5 sm:gap-3 text-left group focus:outline-none shrink-0"
           >
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-sky-600 via-sky-500 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-sky-500/20 group-hover:scale-105 transition-transform shrink-0">
-              <BookMarked className="w-5 h-5" />
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl overflow-hidden shadow-md shadow-amber-500/20 group-hover:scale-105 transition-transform shrink-0 border border-amber-400/40 bg-slate-900">
+              <img
+                src="/logo-notakimia.png"
+                alt="Logo Nota Kimia SPM Cikgu Hafreez"
+                className="w-full h-full object-cover"
+                loading="eager"
+              />
             </div>
-            <div className="flex items-baseline gap-1.5 sm:gap-2">
-              <span className="font-black text-slate-900 tracking-tight text-base sm:text-xl md:text-2xl leading-none">
+            <div className="flex flex-col sm:flex-row sm:items-baseline sm:gap-2">
+              <span className="font-black text-slate-900 tracking-tight text-lg sm:text-2xl md:text-3xl leading-tight sm:leading-none">
                 Nota Kimia
               </span>
-              <span className="text-[11px] sm:text-sm font-semibold text-slate-500 tracking-tight whitespace-nowrap">
+              <span className="text-[11px] sm:text-sm md:text-base font-bold text-slate-500 tracking-tight whitespace-nowrap">
                 by Cikgu Hafreez
               </span>
             </div>
