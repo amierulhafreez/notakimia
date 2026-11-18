@@ -129,7 +129,7 @@ export async function loginDenganGoogleReal(): Promise<{
     state: existingProfile?.state || 'Selangor',
     avatar: fbUser.photoURL || existingProfile?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
     isPremium: isAdmin ? true : (existingProfile?.isPremium ?? false),
-    role: isAdmin ? 'admin' : (existingProfile?.role || 'student'),
+    role: isAdmin ? 'admin' : 'student',
     redeemedCode: existingProfile?.redeemedCode,
     examAttemptsCount: existingProfile?.examAttemptsCount || 0,
     createdAt: existingProfile?.createdAt || Date.now(),

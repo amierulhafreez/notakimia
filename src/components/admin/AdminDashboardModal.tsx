@@ -28,6 +28,7 @@ import {
   generateNewAccessCodes,
   deleteGeneratedCode,
   getAllRegisteredStudents,
+  isAdminEmail,
 } from '../../utils/auth';
 import {
   fetchAllStudentsRemote,
@@ -93,12 +94,13 @@ export const AdminDashboardModal: React.FC<Props> = ({
   };
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && currentUser && isAdminEmail(currentUser.email)) {
       refreshData();
     }
-  }, [isOpen]);
+  }, [isOpen, currentUser]);
 
   if (!isOpen) return null;
+  if (!currentUser || !isAdminEmail(currentUser.email)) return null;
 
   // Handle Generate Codes
   const handleGenerate = (e: React.FormEvent) => {

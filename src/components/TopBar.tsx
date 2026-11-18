@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { Chapter } from '../types/nota';
 import { GoogleUser } from '../types/auth';
-import { isAdminEmail, createAdminUser } from '../utils/auth';
+import { isAdminEmail } from '../utils/auth';
 
 interface Props {
   currentView: 'dashboard' | 'reader';
@@ -51,7 +51,7 @@ export const TopBar: React.FC<Props> = ({
 }) => {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-  const isAdmin = currentUser?.role === 'admin' || (currentUser && isAdminEmail(currentUser.email));
+  const isAdmin = !!(currentUser && isAdminEmail(currentUser.email));
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -279,20 +279,6 @@ export const TopBar: React.FC<Props> = ({
                     >
                       <KeyRound className="w-3.5 h-3.5" />
                       <span>Tebus Kod Akses Khas</span>
-                    </button>
-                  )}
-
-                  {!isAdmin && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setUserMenuOpen(false);
-                        createAdminUser(currentUser.email);
-                      }}
-                      className="w-full py-2 px-3 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs border border-purple-200 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
-                    >
-                      <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-                      <span>👑 Aktifkan Akses Penuh Admin</span>
                     </button>
                   )}
 

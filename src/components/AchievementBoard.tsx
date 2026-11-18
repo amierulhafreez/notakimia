@@ -56,7 +56,7 @@ export const AchievementBoard: React.FC<Props> = ({
   onOpenAdminDashboard,
 }) => {
   const [activeTab, setActiveTab] = useState<'pencapaian' | 'juara'>('pencapaian');
-  const isAdmin = currentUser?.role === 'admin' || (currentUser && isAdminEmail(currentUser.email));
+  const isAdmin = !!(currentUser && isAdminEmail(currentUser.email));
   const [isBadgesMinimized, setIsBadgesMinimized] = useState<boolean>(true);
   const [badgePage, setBadgePage] = useState<number>(0);
   const [studentName, setStudentName] = useState(() => {

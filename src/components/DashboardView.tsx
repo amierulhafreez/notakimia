@@ -50,7 +50,7 @@ export const DashboardView: React.FC<Props> = ({
 }) => {
   const [activeFormTab, setActiveFormTab] = useState<FormLevel>('T4');
   const [viewMode, setViewMode] = useState<'carousel' | 'grid'>('carousel');
-  const isAdmin = currentUser?.role === 'admin' || (currentUser && isAdminEmail(currentUser.email));
+  const isAdmin = !!(currentUser && isAdminEmail(currentUser.email));
 
   const filteredChapters = CHAPTERS_METADATA.filter((c) => c.form === activeFormTab);
 

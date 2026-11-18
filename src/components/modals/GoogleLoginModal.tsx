@@ -187,7 +187,7 @@ export const GoogleLoginModal: React.FC<Props> = ({
       state: candidateState,
       avatar,
       isPremium: stagedUser?.isPremium ?? false,
-      role: isAdminEmail(email) ? 'admin' : (stagedUser?.role || 'student'),
+      role: isAdminEmail(email) ? 'admin' : 'student',
       redeemedCode: stagedUser?.redeemedCode,
       examAttemptsCount: stagedUser?.examAttemptsCount ?? 0,
       createdAt: stagedUser?.createdAt || Date.now(),

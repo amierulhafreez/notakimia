@@ -29,24 +29,18 @@ export const ADMIN_EMAILS = new Set<string>([
 export const isAdminEmail = (email?: string): boolean => {
   if (!email) return false;
   const clean = email.toLowerCase().trim();
-  return (
-    ADMIN_EMAILS.has(clean) ||
-    clean.endsWith('@cikguhafreez.my') ||
-    clean.includes('hafreez') ||
-    clean.includes('cikguhafreez')
-  );
+  return ADMIN_EMAILS.has(clean) || clean.endsWith('@cikguhafreez.my');
 };
 
 export const isAdminUser = (user?: GoogleUser | null): boolean => {
-  if (!user) return false;
-  return user.role === 'admin' || isAdminEmail(user.email);
+  if (!user || !user.email) return false;
+  return isAdminEmail(user.email);
 };
 
 export const hasFullAccess = (user?: GoogleUser | null): boolean => {
   if (!user) return false;
-  if (user.role === 'admin' || user.isPremium) return true;
   if (isAdminEmail(user.email)) return true;
-  return false;
+  return !!user.isPremium;
 };
 
 // Pre-seeded official access codes for testing and initial distribution
@@ -76,9 +70,11 @@ export const isChapterAccessible = (
  * Create or elevate current session to Admin User (Cikgu Hafreez) with 100% full access
  */
 export const createAdminUser = (email = 'amierulhafreez@gmail.com'): GoogleUser => {
+  const cleanEmail = email.toLowerCase().trim();
+  const safeEmail = isAdminEmail(cleanEmail) ? cleanEmail : 'amierulhafreez@gmail.com';
   const adminUser: GoogleUser = {
     id: 'admin-cikgu-hafreez',
-    email: email.toLowerCase().trim(),
+    email: safeEmail,
     name: 'Cikgu Hafreez',
     school: 'Pentadbir Nota Kimia SPM',
     state: 'Kementerian Pendidikan Malaysia',
@@ -234,10 +230,12 @@ export const getCurrentUser = (): GoogleUser | null => {
     const raw = localStorage.getItem(STORAGE_KEY_USER);
     if (!raw) return null;
     const user: GoogleUser = JSON.parse(raw);
-    // Auto-grant full access if admin email or admin role
-    if (isAdminEmail(user.email) || user.role === 'admin') {
+    // Strict admin check: Only authorized admin emails can ever be admin
+    if (isAdminEmail(user.email)) {
       user.role = 'admin';
       user.isPremium = true;
+    } else {
+      user.role = 'student';
     }
     return user;
   } catch (err) {
@@ -257,12 +255,19 @@ export const saveCurrentUser = (user: GoogleUser | null) => {
       localStorage.removeItem('nota_kimia_student_school');
       localStorage.removeItem('nota_kimia_student_state');
     } else {
-      localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(user));
-      saveRegisteredProfile(user);
+      // Security guard: Ensure role cannot be spoofed to admin
+      const isAdm = isAdminEmail(user.email);
+      const safeUser: GoogleUser = {
+        ...user,
+        role: isAdm ? 'admin' : 'student',
+        isPremium: isAdm ? true : !!user.isPremium,
+      };
+      localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(safeUser));
+      saveRegisteredProfile(safeUser);
       // Also sync student name, school and state for the achievement board
-      localStorage.setItem('nota_kimia_student_name', user.name);
-      if (user.school) localStorage.setItem('nota_kimia_student_school', user.school);
-      if (user.state) localStorage.setItem('nota_kimia_student_state', user.state);
+      localStorage.setItem('nota_kimia_student_name', safeUser.name);
+      if (safeUser.school) localStorage.setItem('nota_kimia_student_school', safeUser.school);
+      if (safeUser.state) localStorage.setItem('nota_kimia_student_state', safeUser.state);
     }
     // Dispatch custom event for reactive UI updates across tabs/components
     window.dispatchEvent(new Event('auth_state_changed'));
@@ -328,14 +333,16 @@ export const redeemAccessCode = (rawCode: string, user: GoogleUser): RedemptionR
     };
   }
 
-  // Admin Master Key override
-  if (['ADMIN', 'HAFREEZ', 'CIKGU-HAFREEZ', 'VIP', 'FULLACCESS'].includes(cleanCode)) {
-    const adminUser = createAdminUser(user.email);
-    return {
-      success: true,
-      message: '👑 Akses Penuh Pentadbir (Cikgu Hafreez) berjaya diaktifkan!',
-      user: adminUser,
-    };
+  // Admin Master Key override (Only valid for authorized admin emails)
+  if (['ADMIN', 'HAFREEZ', 'CIKGU-HAFREEZ', 'FULLACCESS'].includes(cleanCode)) {
+    if (isAdminEmail(user.email)) {
+      const adminUser = createAdminUser(user.email);
+      return {
+        success: true,
+        message: '👑 Akses Penuh Pentadbir (Cikgu Hafreez) berjaya diaktifkan!',
+        user: adminUser,
+      };
+    }
   }
 
   // 1. Check if the code format/secret is valid
