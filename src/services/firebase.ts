@@ -17,6 +17,7 @@ import {
   query,
   orderBy,
   limit,
+  where,
 } from '@firebase/firestore';
 import firebaseConfig from '../firebase-config.json';
 import { GoogleUser, GeneratedAccessCode } from '../types/auth';
@@ -37,6 +38,20 @@ export const db = firebaseConfig.firestoreDatabaseId
 
 const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
+
+/**
+ * Remove undefined properties so Firestore setDoc never rejects the payload
+ */
+function stripUndefined<T extends Record<string, any>>(obj: T): Record<string, any> {
+  const clean: Record<string, any> = {};
+  Object.keys(obj).forEach((key) => {
+    const val = obj[key];
+    if (val !== undefined) {
+      clean[key] = val;
+    }
+  });
+  return clean;
+}
 
 /**
  * Perform real Google Authentication via Firebase signInWithPopup
@@ -92,13 +107,23 @@ export async function loginDenganGoogleReal(): Promise<{
   const cleanEmail = fbUser.email.toLowerCase().trim();
   const isAdmin = isAdminEmail(cleanEmail);
 
-  // Check if profile exists in Firestore
+  // Check if profile exists in Firestore (by UID first, then by email)
   let existingProfile: Partial<GoogleUser> | null = null;
   try {
     const userDocRef = doc(db, 'nota_kimia_users', fbUser.uid);
     const snap = await getDoc(userDocRef);
     if (snap.exists()) {
       existingProfile = snap.data() as Partial<GoogleUser>;
+    } else {
+      const q = query(
+        collection(db, 'nota_kimia_users'),
+        where('email', '==', cleanEmail),
+        limit(1)
+      );
+      const qSnap = await getDocs(q);
+      if (!qSnap.empty) {
+        existingProfile = qSnap.docs[0].data() as Partial<GoogleUser>;
+      }
     }
   } catch (firestoreErr) {
     console.warn('Firestore read error (offline/permission):', firestoreErr);
@@ -130,9 +155,15 @@ export async function loginDenganGoogleReal(): Promise<{
     avatar: fbUser.photoURL || existingProfile?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
     isPremium: isAdmin ? true : (existingProfile?.isPremium ?? false),
     role: isAdmin ? 'admin' : 'student',
-    redeemedCode: existingProfile?.redeemedCode,
+    ...(existingProfile?.redeemedCode ? { redeemedCode: existingProfile.redeemedCode } : {}),
     examAttemptsCount: existingProfile?.examAttemptsCount || 0,
     createdAt: existingProfile?.createdAt || Date.now(),
+    lastLoginAt: Date.now(),
+    loginCount: (existingProfile?.loginCount || 0) + 1,
+    xp: existingProfile?.xp || 0,
+    completedSubtopicsCount: existingProfile?.completedSubtopicsCount || 0,
+    quizAccuracy: existingProfile?.quizAccuracy || 0,
+    badgesCount: existingProfile?.badgesCount || 0,
   };
 
   // Sync to Firestore & localStorage
@@ -149,19 +180,29 @@ export async function loginDenganGoogleReal(): Promise<{
 /**
  * Save / Update user profile in Firestore and localStorage
  */
-export async function syncUserProfile(user: GoogleUser): Promise<void> {
+export async function syncUserProfile(user: GoogleUser): Promise<boolean> {
   // 1. Update localStorage registry
-  saveRegisteredProfile(user);
+  const payload: GoogleUser = {
+    ...user,
+    lastLoginAt: user.lastLoginAt || Date.now(),
+  };
+  saveRegisteredProfile(payload);
 
-  // 2. Update Firestore
+  // 2. Update Firestore (must strip undefined fields!)
   try {
-    const userDocRef = doc(db, 'nota_kimia_users', user.id);
-    await setDoc(userDocRef, {
-      ...user,
+    const docId = payload.id || payload.email.toLowerCase().trim();
+    const userDocRef = doc(db, 'nota_kimia_users', docId);
+    const cleanPayload = stripUndefined({
+      ...payload,
+      id: docId,
+      email: payload.email.toLowerCase().trim(),
       lastLoginAt: Date.now(),
-    }, { merge: true });
+    });
+    await setDoc(userDocRef, cleanPayload, { merge: true });
+    return true;
   } catch (err) {
     console.warn('Firestore write warning:', err);
+    return false;
   }
 }
 
@@ -191,8 +232,9 @@ export async function fetchAllStudentsRemote(): Promise<GoogleUser[]> {
     snap.forEach((docSnap) => {
       const data = docSnap.data() as GoogleUser;
       if (data && data.email) {
-        studentsMap[data.email.toLowerCase().trim()] = {
-          ...studentsMap[data.email.toLowerCase().trim()],
+        const key = data.email.toLowerCase().trim();
+        studentsMap[key] = {
+          ...studentsMap[key],
           ...data,
         };
       }
@@ -206,7 +248,7 @@ export async function fetchAllStudentsRemote(): Promise<GoogleUser[]> {
 
   return Object.values(studentsMap)
     .filter((u) => u.role !== 'admin' && !isAdminEmail(u.email))
-    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    .sort((a, b) => (b.lastLoginAt || b.createdAt || 0) - (a.lastLoginAt || a.createdAt || 0));
 }
 
 /**
@@ -215,7 +257,7 @@ export async function fetchAllStudentsRemote(): Promise<GoogleUser[]> {
 export async function saveGeneratedCodeRemote(codeDoc: GeneratedAccessCode): Promise<void> {
   try {
     const codeRef = doc(db, 'nota_kimia_access_codes', codeDoc.code);
-    await setDoc(codeRef, codeDoc, { merge: true });
+    await setDoc(codeRef, stripUndefined(codeDoc), { merge: true });
   } catch (err) {
     console.warn('Firestore write code warning:', err);
   }

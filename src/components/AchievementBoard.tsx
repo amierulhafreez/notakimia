@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Trophy,
   Award,
@@ -17,11 +18,16 @@ import {
   ChevronDown,
   ChevronUp,
   ShieldCheck,
-  BookOpen
+  BookOpen,
+  Search,
+  X,
+  Maximize2,
+  RefreshCw,
 } from 'lucide-react';
 import { UserStudyProgress } from '../types/nota';
 import { GoogleUser } from '../types/auth';
-import { isAdminEmail } from '../utils/auth';
+import { isAdminEmail, getAllRegisteredStudents } from '../utils/auth';
+import { fetchAllStudentsRemote, syncUserProfile } from '../services/firebase';
 
 interface Props {
   userProgress: UserStudyProgress;
@@ -72,6 +78,30 @@ export const AchievementBoard: React.FC<Props> = ({
   const [tempName, setTempName] = useState(studentName);
   const [tempSchool, setTempSchool] = useState(studentSchool);
   const [tempState, setTempState] = useState(studentState);
+
+  // Real Leaderboard & Full Ranking Modal State
+  const [remoteStudents, setRemoteStudents] = useState<GoogleUser[]>(() => getAllRegisteredStudents());
+  const [isRefreshingLeaderboard, setIsRefreshingLeaderboard] = useState(false);
+  const [fullRankingModalOpen, setFullRankingModalOpen] = useState(false);
+  const [rankingSearchQuery, setRankingSearchQuery] = useState('');
+
+  const loadLeaderboardUsers = async () => {
+    setIsRefreshingLeaderboard(true);
+    try {
+      const students = await fetchAllStudentsRemote();
+      if (students) {
+        setRemoteStudents(students);
+      }
+    } catch (err) {
+      console.warn('Error loading leaderboard users:', err);
+    } finally {
+      setIsRefreshingLeaderboard(false);
+    }
+  };
+
+  useEffect(() => {
+    loadLeaderboardUsers();
+  }, [activeTab, currentUser?.email]);
 
   // Sync profile reactively whenever auth state changes
   useEffect(() => {
@@ -408,17 +438,7 @@ export const AchievementBoard: React.FC<Props> = ({
     setBadgePage((prev) => (prev < totalBadgePages - 1 ? prev + 1 : 0));
   };
 
-  // Hall of Fame Leaderboard (Public Benchmark for Motivation)
-  const defaultLeaderboard: LeaderboardUser[] = [
-    { rank: 1, name: 'Nur Aina Sofea', school: 'Kolej Islam Sultan Alam Shah', state: 'Selangor', completedSubtopics: 22, quizAccuracy: 98, xp: 2450 },
-    { rank: 2, name: 'Muhammad Danial', school: 'MRSM Tun Ghafar Baba', state: 'Melaka', completedSubtopics: 19, quizAccuracy: 96, xp: 2180 },
-    { rank: 3, name: 'Tan Jia Wei', school: 'SMJK Chung Ling', state: 'Pulau Pinang', completedSubtopics: 17, quizAccuracy: 94, xp: 1920 },
-    { rank: 4, name: 'Ahmad Faiz', school: 'Sekolah Menengah Sains Muzaffar Syah', state: 'Melaka', completedSubtopics: 15, quizAccuracy: 92, xp: 1740 },
-    { rank: 5, name: 'Sharifah Nadiah', school: 'SMK (P) Sri Aman', state: 'Selangor', completedSubtopics: 14, quizAccuracy: 90, xp: 1590 },
-    { rank: 6, name: 'Gavin Raj', school: 'St. John’s Institution', state: 'Kuala Lumpur', completedSubtopics: 13, quizAccuracy: 88, xp: 1450 },
-  ];
-
-  // Insert current user into leaderboard dynamically ONLY if not admin
+  // Build Leaderboard from all real logged-in users
   const currentUserLeaderboardItem: LeaderboardUser = {
     rank: 0,
     name: studentName,
@@ -430,9 +450,57 @@ export const AchievementBoard: React.FC<Props> = ({
     isCurrentUser: true,
   };
 
-  const combinedLeaderboard = (isAdmin ? defaultLeaderboard : [...defaultLeaderboard, currentUserLeaderboardItem])
-    .sort((a, b) => b.xp - a.xp)
+  const mergedUsersMap = new Map<string, LeaderboardUser>();
+  remoteStudents.forEach((u) => {
+    if (!u || !u.email || isAdminEmail(u.email) || u.role === 'admin') return;
+    const emailKey = u.email.toLowerCase().trim();
+    const isMe = !!(currentUser && !isAdmin && currentUser.email.toLowerCase().trim() === emailKey);
+    mergedUsersMap.set(emailKey, {
+      rank: 0,
+      name: isMe ? studentName : (u.name || 'Calon Kimia SPM'),
+      school: isMe ? studentSchool : (u.school || 'Sekolah Calon SPM'),
+      state: isMe ? studentState : (u.state || 'Malaysia'),
+      completedSubtopics: isMe ? completedCount : (u.completedSubtopicsCount || 0),
+      quizAccuracy: isMe ? quizAccuracy : (u.quizAccuracy || 0),
+      xp: isMe ? userXP : (u.xp || 0),
+      isCurrentUser: isMe,
+    });
+  });
+
+  // Ensure current logged-in student (or guest preview) is always represented
+  if (!isAdmin) {
+    if (currentUser?.email) {
+      const myKey = currentUser.email.toLowerCase().trim();
+      if (!mergedUsersMap.has(myKey)) {
+        mergedUsersMap.set(myKey, currentUserLeaderboardItem);
+      }
+    } else {
+      mergedUsersMap.set('__guest__', currentUserLeaderboardItem);
+    }
+  }
+
+  const combinedLeaderboard: LeaderboardUser[] = Array.from(mergedUsersMap.values())
+    .sort((a, b) => {
+      if (b.xp !== a.xp) return b.xp - a.xp;
+      if (b.completedSubtopics !== a.completedSubtopics) return b.completedSubtopics - a.completedSubtopics;
+      if (b.quizAccuracy !== a.quizAccuracy) return b.quizAccuracy - a.quizAccuracy;
+      return a.name.localeCompare(b.name);
+    })
     .map((item, index) => ({ ...item, rank: index + 1 }));
+
+  const top10Leaderboard = combinedLeaderboard.slice(0, 10);
+  const currentUserEntry = combinedLeaderboard.find((u) => u.isCurrentUser);
+  const isOutsideTop10 = !isAdmin && !!currentUserEntry && currentUserEntry.rank > 10;
+
+  const filteredFullRanking = combinedLeaderboard.filter((u) => {
+    if (!rankingSearchQuery.trim()) return true;
+    const q = rankingSearchQuery.toLowerCase();
+    return (
+      u.name.toLowerCase().includes(q) ||
+      u.school.toLowerCase().includes(q) ||
+      u.state.toLowerCase().includes(q)
+    );
+  });
 
   const handleSaveProfile = () => {
     if (tempName.trim()) {
@@ -448,7 +516,7 @@ export const AchievementBoard: React.FC<Props> = ({
       localStorage.setItem('nota_kimia_student_state', tempState.trim());
     }
 
-    // Sync to GoogleUser if present
+    // Sync to GoogleUser & Firestore if present
     try {
       const rawUser = localStorage.getItem('nota_kimia_google_user');
       if (rawUser) {
@@ -457,6 +525,7 @@ export const AchievementBoard: React.FC<Props> = ({
         u.school = tempSchool.trim() || u.school;
         u.state = tempState.trim() || u.state;
         localStorage.setItem('nota_kimia_google_user', JSON.stringify(u));
+        syncUserProfile(u).catch(() => {});
         window.dispatchEvent(new Event('auth_state_changed'));
       }
     } catch (e) {
@@ -512,10 +581,10 @@ export const AchievementBoard: React.FC<Props> = ({
                 : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <Users className="w-4 h-4 text-amber-600" />
-            <span>Papan Juara Umum</span>
+            <Trophy className="w-4 h-4 text-amber-600" />
+            <span>Ranking Kimia Cikgu Hafreez</span>
             <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-50 text-amber-800 font-mono font-bold">
-              Top Calon
+              Top 10
             </span>
           </button>
         </div>
@@ -927,48 +996,80 @@ export const AchievementBoard: React.FC<Props> = ({
           </div>
         </div>
       ) : (
-        /* TAB 2: PAPAN JUARA UMUM (PUBLIC BENCHMARK & HALL OF FAME) */
+        /* TAB 2: RANKING KIMIA CIKGU HAFREEZ (TOP 10 + PINNED USER + FULL POPUP) */
         <div className="space-y-4 animate-in fade-in duration-200">
-          <div className="p-4 rounded-2xl bg-amber-50/90 border border-amber-200/80 text-xs text-amber-950 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-2xs">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-xs">
+          {/* Header Banner & Your Rank */}
+          <div className="p-4 sm:p-5 rounded-3xl bg-gradient-to-br from-amber-50 via-orange-50/60 to-amber-100/50 border border-amber-200/90 text-xs text-amber-950 flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 shadow-2xs">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-amber-500 to-orange-500 text-white flex items-center justify-center shrink-0 shadow-md shadow-amber-500/20">
                 <Trophy className="w-5 h-5" />
               </div>
               <div>
-                <span className="font-extrabold text-amber-950">Papan Penanda Aras Kebangsaan Kimia SPM</span>
-                <p className="text-[11px] text-amber-800 leading-relaxed">
-                  Bandingkan kedudukan anda bersama calon SPM dari seluruh Malaysia. Lengkapkan nota, kuiz, dan Mod Peperiksaan untuk melonjakkan mata XP!
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-black text-sm sm:text-base text-amber-950 tracking-tight">
+                    Ranking Kimia Cikgu Hafreez
+                  </span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200/70 text-amber-900">
+                    Top 10 Calon
+                  </span>
+                </div>
+                <p className="text-[11px] text-amber-800 leading-relaxed mt-0.5">
+                  Setiap calon yang log masuk akan direkodkan secara automatik. Kumpul mata XP daripada bacaan nota, kuiz, dan Mod Peperiksaan!
                 </p>
               </div>
             </div>
 
-            <div className="text-right shrink-0">
-              <span className="text-[10px] uppercase tracking-wider text-amber-800 font-bold block">
-                {isAdmin ? 'Status Pemantauan' : 'Kedudukan Anda'}
-              </span>
-              <span className="text-lg font-black text-amber-950">
-                {isAdmin
-                  ? '👑 Mod Pentadbir (Dikecualikan)'
-                  : `#${combinedLeaderboard.find((u) => u.isCurrentUser)?.rank || 1} daripada ${combinedLeaderboard.length} Calon`}
-              </span>
+            <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto justify-between lg:justify-end">
+              <div className="text-left lg:text-right">
+                <span className="text-[10px] uppercase tracking-wider text-amber-800 font-bold block">
+                  {isAdmin ? 'Status Pemantauan' : 'Kedudukan Anda'}
+                </span>
+                <span className="text-base sm:text-lg font-black text-amber-950">
+                  {isAdmin
+                    ? '👑 Mod Pentadbir (Dikecualikan)'
+                    : `#${currentUserEntry?.rank || 1} daripada ${combinedLeaderboard.length} Calon`}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={loadLeaderboardUsers}
+                  disabled={isRefreshingLeaderboard}
+                  className="px-3 py-2 rounded-full liquid-glass-capsule text-amber-950 hover:text-amber-700 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-60"
+                  title="Muat semula senarai ranking terkini"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingLeaderboard ? 'animate-spin' : ''}`} />
+                  <span className="hidden sm:inline">Segar</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setFullRankingModalOpen(true)}
+                  className="px-4 py-2 rounded-full liquid-glass-amber text-amber-950 font-black text-xs transition-all cursor-pointer flex items-center gap-1.5 shadow-sm hover:scale-[1.02]"
+                >
+                  <Maximize2 className="w-3.5 h-3.5 text-amber-700" />
+                  <span>Lihat Ranking Penuh ({combinedLeaderboard.length})</span>
+                </button>
+              </div>
             </div>
           </div>
 
-          {/* Leaderboard Table */}
-          <div className="overflow-x-auto rounded-3xl border border-slate-200/90 shadow-xs">
+          {/* Top 10 Leaderboard Table */}
+          <div className="overflow-x-auto rounded-3xl border border-slate-200/90 shadow-xs bg-white">
             <table className="w-full text-xs text-left border-collapse">
               <thead className="bg-slate-100/90 text-slate-700 font-extrabold border-b border-slate-200">
                 <tr>
-                  <th className="py-3 px-4 w-14 text-center">Kedudukan</th>
-                  <th className="py-3 px-4">Calon Murid</th>
-                  <th className="py-3 px-4">Sekolah & Negeri</th>
-                  <th className="py-3 px-4 text-center">Subtopik</th>
-                  <th className="py-3 px-4 text-center">Ketepatan Kuiz</th>
-                  <th className="py-3 px-4 text-right">Mata XP</th>
+                  <th className="py-3.5 px-4 w-16 text-center">Kedudukan</th>
+                  <th className="py-3.5 px-4">Calon Murid</th>
+                  <th className="py-3.5 px-4">Sekolah & Negeri</th>
+                  <th className="py-3.5 px-4 text-center">Subtopik</th>
+                  <th className="py-3.5 px-4 text-center">Ketepatan Kuiz</th>
+                  <th className="py-3.5 px-4 text-right">Mata XP</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white">
-                {combinedLeaderboard.map((user) => {
+                {top10Leaderboard.map((user) => {
                   const isTop3 = user.rank <= 3;
                   const rankColor =
                     user.rank === 1
@@ -981,14 +1082,13 @@ export const AchievementBoard: React.FC<Props> = ({
 
                   return (
                     <tr
-                      key={user.rank + user.name}
+                      key={`${user.rank}-${user.name}-${user.isCurrentUser ? 'me' : 'other'}`}
                       className={`transition-colors ${
                         user.isCurrentUser
                           ? 'bg-sky-50/90 font-semibold border-l-4 border-l-sky-500'
                           : 'hover:bg-slate-50'
                       }`}
                     >
-                      {/* Rank Column */}
                       <td className="py-3.5 px-4 text-center">
                         <span
                           className={`w-7 h-7 rounded-xl inline-flex items-center justify-center font-black text-xs shadow-xs ${rankColor}`}
@@ -996,13 +1096,9 @@ export const AchievementBoard: React.FC<Props> = ({
                           {user.rank}
                         </span>
                       </td>
-
-                      {/* Name Column */}
                       <td className="py-3.5 px-4">
                         <div className="flex items-center gap-2">
-                          <span className="font-extrabold text-slate-900">
-                            {user.name}
-                          </span>
+                          <span className="font-extrabold text-slate-900">{user.name}</span>
                           {user.isCurrentUser && (
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-500 text-white shadow-2xs">
                               Anda
@@ -1015,37 +1111,231 @@ export const AchievementBoard: React.FC<Props> = ({
                           )}
                         </div>
                       </td>
-
-                      {/* School & State */}
                       <td className="py-3.5 px-4 text-slate-600">
                         <div className="text-xs font-medium">{user.school}</div>
                         <div className="text-[10px] text-slate-400">{user.state}</div>
                       </td>
-
-                      {/* Subtopics Completed */}
                       <td className="py-3.5 px-4 text-center font-bold text-slate-800">
-                        {user.completedSubtopics} / 25
+                        {user.completedSubtopics} / 68
                       </td>
-
-                      {/* Quiz Accuracy */}
                       <td className="py-3.5 px-4 text-center">
                         <span className="px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-800 font-bold border border-emerald-200">
                           {user.quizAccuracy}%
                         </span>
                       </td>
-
-                      {/* XP Points */}
                       <td className="py-3.5 px-4 text-right font-black text-indigo-700 font-mono text-sm">
                         {user.xp.toLocaleString()} XP
                       </td>
                     </tr>
                   );
                 })}
+
+                {/* Pinned Row when Current User is Outside Top 10 */}
+                {isOutsideTop10 && currentUserEntry && (
+                  <>
+                    <tr className="bg-slate-50/70">
+                      <td colSpan={6} className="py-1.5 px-4 text-center text-[11px] font-bold text-slate-400 tracking-widest">
+                        • • • KEDUDUKAN SEMASA ANDA (LUAR TOP 10) • • •
+                      </td>
+                    </tr>
+                    <tr className="bg-sky-50/95 font-semibold border-l-4 border-l-sky-500">
+                      <td className="py-3.5 px-4 text-center">
+                        <span className="min-w-7 px-1.5 h-7 rounded-xl inline-flex items-center justify-center font-black text-xs shadow-xs bg-sky-600 text-white">
+                          #{currentUserEntry.rank}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <div className="flex items-center gap-2">
+                          <span className="font-extrabold text-slate-900">{currentUserEntry.name}</span>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-500 text-white shadow-2xs">
+                            Anda
+                          </span>
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4 text-slate-600">
+                        <div className="text-xs font-medium">{currentUserEntry.school}</div>
+                        <div className="text-[10px] text-slate-400">{currentUserEntry.state}</div>
+                      </td>
+                      <td className="py-3.5 px-4 text-center font-bold text-slate-800">
+                        {currentUserEntry.completedSubtopics} / 68
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        <span className="px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-800 font-bold border border-emerald-200">
+                          {currentUserEntry.quizAccuracy}%
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-black text-indigo-700 font-mono text-sm">
+                        {currentUserEntry.xp.toLocaleString()} XP
+                      </td>
+                    </tr>
+                  </>
+                )}
               </tbody>
             </table>
           </div>
+
+          {/* Bottom Bar CTA to view full ranking */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-1">
+            <p className="text-[11px] text-slate-500">
+              Memaparkan <span className="font-bold text-slate-700">Top {top10Leaderboard.length}</span> daripada <span className="font-bold text-slate-700">{combinedLeaderboard.length}</span> calon berdaftar.
+            </p>
+            <button
+              type="button"
+              onClick={() => setFullRankingModalOpen(true)}
+              className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer transition-colors"
+            >
+              <span>Buka Paparan Penuh Ranking ({combinedLeaderboard.length} Calon)</span>
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       )}
+
+      {/* Full Ranking Pop-up Modal (Rendered via Portal to cover full viewport) */}
+      {fullRankingModalOpen &&
+        createPortal(
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-4xl w-full max-h-[88vh] border border-slate-200 shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-5 sm:p-6 text-white flex items-center justify-between gap-4 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-amber-400 to-orange-500 text-amber-950 flex items-center justify-center shadow-lg shrink-0">
+                  <Trophy className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg sm:text-xl font-black tracking-tight text-white">
+                    Ranking Kimia Cikgu Hafreez
+                  </h3>
+                  <p className="text-xs text-slate-300 mt-0.5">
+                    Senarai penuh keseluruhan {combinedLeaderboard.length} calon Kimia SPM KSSM
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFullRankingModalOpen(false)}
+                className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-all cursor-pointer shrink-0"
+                title="Tutup"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Search & Your Rank Bar */}
+            <div className="p-4 border-b border-slate-200 bg-slate-50/80 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0">
+              <div className="relative flex-1 max-w-md">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                <input
+                  type="text"
+                  value={rankingSearchQuery}
+                  onChange={(e) => setRankingSearchQuery(e.target.value)}
+                  placeholder="Cari nama calon, sekolah, atau negeri..."
+                  className="w-full pl-9 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              {!isAdmin && currentUserEntry && (
+                <div className="px-3.5 py-2 rounded-xl bg-sky-50 border border-sky-200 text-xs font-bold text-sky-900 flex items-center gap-2 shrink-0">
+                  <span>Kedudukan Anda:</span>
+                  <span className="px-2 py-0.5 rounded-lg bg-sky-600 text-white font-black">
+                    #{currentUserEntry.rank}
+                  </span>
+                  <span className="text-sky-700 font-mono">({currentUserEntry.xp.toLocaleString()} XP)</span>
+                </div>
+              )}
+            </div>
+
+            {/* Scrollable Full Ranking Table */}
+            <div className="flex-1 overflow-y-auto">
+              <table className="w-full text-xs text-left border-collapse">
+                <thead className="bg-slate-100 text-slate-700 font-extrabold border-b border-slate-200 sticky top-0 z-10">
+                  <tr>
+                    <th className="py-3 px-4 w-16 text-center">Kedudukan</th>
+                    <th className="py-3 px-4">Calon Murid</th>
+                    <th className="py-3 px-4">Sekolah & Negeri</th>
+                    <th className="py-3 px-4 text-center">Subtopik</th>
+                    <th className="py-3 px-4 text-center">Ketepatan Kuiz</th>
+                    <th className="py-3 px-4 text-right">Mata XP</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {filteredFullRanking.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-10 text-center text-slate-400">
+                        Tiada calon dijumpai untuk carian &ldquo;{rankingSearchQuery}&rdquo;.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredFullRanking.map((user) => {
+                      const isTop3 = user.rank <= 3;
+                      const rankColor =
+                        user.rank === 1
+                          ? 'bg-amber-400 text-amber-950 ring-2 ring-amber-300'
+                          : user.rank === 2
+                          ? 'bg-slate-300 text-slate-800 ring-2 ring-slate-200'
+                          : user.rank === 3
+                          ? 'bg-amber-600 text-white ring-2 ring-amber-500'
+                          : user.isCurrentUser
+                          ? 'bg-sky-600 text-white'
+                          : 'bg-slate-100 text-slate-700';
+
+                      return (
+                        <tr
+                          key={`full-${user.rank}-${user.name}-${user.isCurrentUser ? 'me' : 'other'}`}
+                          className={`transition-colors ${
+                            user.isCurrentUser
+                              ? 'bg-sky-50/90 font-semibold border-l-4 border-l-sky-500'
+                              : 'hover:bg-slate-50'
+                          }`}
+                        >
+                          <td className="py-3 px-4 text-center">
+                            <span
+                              className={`min-w-7 px-1.5 h-7 rounded-xl inline-flex items-center justify-center font-black text-xs shadow-xs ${rankColor}`}
+                            >
+                              {user.rank}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-2">
+                              <span className="font-extrabold text-slate-900">{user.name}</span>
+                              {user.isCurrentUser && (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-500 text-white">
+                                  Anda
+                                </span>
+                              )}
+                              {isTop3 && (
+                                <span className="text-xs">
+                                  {user.rank === 1 ? '🥇' : user.rank === 2 ? '🥈' : '🥉'}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 text-slate-600">
+                            <div className="text-xs font-medium">{user.school}</div>
+                            <div className="text-[10px] text-slate-400">{user.state}</div>
+                          </td>
+                          <td className="py-3 px-4 text-center font-bold text-slate-800">
+                            {user.completedSubtopics} / 68
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <span className="px-2 py-0.5 rounded-lg bg-emerald-50 text-emerald-800 font-bold border border-emerald-200">
+                              {user.quizAccuracy}%
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-right font-black text-indigo-700 font-mono text-sm">
+                            {user.xp.toLocaleString()} XP
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>,
+          document.body
+        )}
     </div>
   );
 };

@@ -32,6 +32,7 @@ import {
   hasFullAccess,
   incrementExamAttempts,
 } from './utils/auth';
+import { syncUserProfile, logKeluarFirebase } from './services/firebase';
 
 export const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<'dashboard' | 'reader'>('dashboard');
@@ -70,6 +71,26 @@ export const App: React.FC = () => {
     window.addEventListener('auth_state_changed', handleAuthChange);
     return () => window.removeEventListener('auth_state_changed', handleAuthChange);
   }, []);
+
+  // Automatically sync live XP, progress, and login presence to Firestore for logged-in users
+  useEffect(() => {
+    if (!currentUser || !currentUser.email) return;
+    const completedCount = userProgress.completedSubtopics.length;
+    const quizEntries = Object.entries(userProgress.quizScores);
+    const totalQuestions = quizEntries.reduce((acc, [, q]) => acc + q.total, 0);
+    const totalCorrect = quizEntries.reduce((acc, [, q]) => acc + q.score, 0);
+    const quizAccuracy = totalQuestions > 0 ? Math.round((totalCorrect / totalQuestions) * 100) : 0;
+    const perfectQuizzes = quizEntries.filter(([, q]) => q.score === q.total && q.total > 0).length;
+    const examCount = quizEntries.filter(([k]) => k.startsWith('exam-')).length;
+    const userXP = completedCount * 100 + totalCorrect * 20 + perfectQuizzes * 50 + examCount * 80;
+
+    syncUserProfile({
+      ...currentUser,
+      xp: userXP,
+      completedSubtopicsCount: completedCount,
+      quizAccuracy,
+    }).catch(() => {});
+  }, [currentUser?.id, currentUser?.email, currentUser?.name, currentUser?.school, currentUser?.state, userProgress]);
 
   // Keyboard shortcut for Search (⌘K / Ctrl+K)
   useEffect(() => {
@@ -226,6 +247,7 @@ export const App: React.FC = () => {
     if (currentUser) {
       const updated = incrementExamAttempts(currentUser);
       setCurrentUser(updated);
+      syncUserProfile(updated).catch(() => {});
     }
   };
 
@@ -267,6 +289,7 @@ export const App: React.FC = () => {
   };
 
   const handleSignOut = () => {
+    logKeluarFirebase().catch(() => {});
     saveCurrentUser(null);
     setCurrentUser(null);
     setCurrentView('dashboard');

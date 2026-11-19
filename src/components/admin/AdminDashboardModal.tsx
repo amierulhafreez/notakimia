@@ -21,6 +21,7 @@ import {
   Zap,
   ArrowRight,
   Download,
+  RefreshCw,
 } from 'lucide-react';
 import { GoogleUser, GeneratedAccessCode } from '../../types/auth';
 import {
@@ -619,6 +620,18 @@ export const AdminDashboardModal: React.FC<Props> = ({
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
+                {/* Manual Sync Button */}
+                <button
+                  type="button"
+                  onClick={refreshData}
+                  disabled={isLoadingRemote}
+                  className="px-3 py-1.5 rounded-xl border border-sky-200 bg-sky-50 hover:bg-sky-100 text-sky-700 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-60"
+                  title="Muat semula rekod pelajar terkini daripada pangkalan data"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingRemote ? 'animate-spin' : ''}`} />
+                  <span>{isLoadingRemote ? 'Menyegerak...' : 'Segar Semula'}</span>
+                </button>
+
                 {/* Copy All Emails button */}
                 <button
                   type="button"
@@ -672,6 +685,7 @@ export const AdminDashboardModal: React.FC<Props> = ({
                       <th className="py-3 px-4">Nama Calon</th>
                       <th className="py-3 px-4">Emel Sebenar Google</th>
                       <th className="py-3 px-4">Sekolah & Negeri</th>
+                      <th className="py-3 px-4">Rekod Log Masuk & XP</th>
                       <th className="py-3 px-4">Status Akses</th>
                       <th className="py-3 px-4">Kod Ditebus</th>
                       <th className="py-3 px-4 text-right">Tindakan Janaan</th>
@@ -680,7 +694,7 @@ export const AdminDashboardModal: React.FC<Props> = ({
                   <tbody className="divide-y divide-slate-100">
                     {filteredStudents.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="py-8 text-center text-slate-400">
+                        <td colSpan={7} className="py-8 text-center text-slate-400">
                           Tiada murid berdaftar dijumpai.
                         </td>
                       </tr>
@@ -721,10 +735,26 @@ export const AdminDashboardModal: React.FC<Props> = ({
                             </div>
                           </td>
                           <td className="py-3 px-4">
-                            <div className="font-medium text-slate-800">{st.school || 'Sekolah Calon SPM'}</div>
+                            <div className="font-medium text-slate-800">{st.school || 'Belum Lengkapkan Sekolah'}</div>
                             <div className="text-[10px] text-slate-500 flex items-center gap-1">
                               <MapPin className="w-2.5 h-2.5 text-slate-400" />
                               <span>{st.state || 'Malaysia'}</span>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
+                              <Clock className="w-3 h-3 text-sky-500 shrink-0" />
+                              <span>
+                                {new Date(st.lastLoginAt || st.createdAt || Date.now()).toLocaleString('ms-MY', {
+                                  day: '2-digit',
+                                  month: 'short',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-indigo-600 font-bold mt-0.5">
+                              {(st.xp || 0).toLocaleString()} XP • {st.loginCount || 1}x Log Masuk
                             </div>
                           </td>
                           <td className="py-3 px-4">

@@ -10,6 +10,12 @@ export interface GoogleUser {
   redeemedCode?: string;
   examAttemptsCount: number;
   createdAt: number;
+  lastLoginAt?: number;
+  loginCount?: number;
+  xp?: number;
+  completedSubtopicsCount?: number;
+  quizAccuracy?: number;
+  badgesCount?: number;
 }
 
 export interface RedeemedCodeRecord {

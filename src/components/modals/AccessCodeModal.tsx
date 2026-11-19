@@ -14,7 +14,8 @@ import {
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { GoogleUser } from '../../types/auth';
-import { redeemAccessCode } from '../../utils/auth';
+import { redeemAccessCode, getAdminGeneratedCodes } from '../../utils/auth';
+import { syncUserProfile, saveGeneratedCodeRemote } from '../../services/firebase';
 
 interface Props {
   isOpen: boolean;
@@ -51,6 +52,12 @@ export const AccessCodeModal: React.FC<Props> = ({
       setIsSubmitting(false);
 
       if (result.success && result.user) {
+        syncUserProfile(result.user).catch(() => {});
+        const cleanCode = code.trim().toUpperCase();
+        const redeemedCodeDoc = getAdminGeneratedCodes().find((c) => c.code.toUpperCase() === cleanCode);
+        if (redeemedCodeDoc) {
+          saveGeneratedCodeRemote(redeemedCodeDoc).catch(() => {});
+        }
         setSuccessMsg(result.message);
         confetti({
           particleCount: 100,
