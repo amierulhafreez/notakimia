@@ -35,6 +35,7 @@ import {
   fetchAllStudentsRemote,
   fetchGeneratedCodesRemote,
   saveGeneratedCodeRemote,
+  deleteGeneratedCodeRemote,
   subscribeAuthState,
   auth,
 } from '../../services/firebase';
@@ -83,12 +84,8 @@ export const AdminDashboardModal: React.FC<Props> = ({
         fetchAllStudentsRemote(),
         fetchGeneratedCodesRemote(),
       ]);
-      if (remoteStudents && remoteStudents.length > 0) {
-        setStudents(remoteStudents);
-      }
-      if (remoteCodes && remoteCodes.length > 0) {
-        setCodes(remoteCodes);
-      }
+      setStudents(remoteStudents);
+      setCodes(remoteCodes);
     } catch (err) {
       console.warn('Sync error:', err);
     } finally {
@@ -139,9 +136,10 @@ export const AdminDashboardModal: React.FC<Props> = ({
   };
 
   // Handle Delete Code
-  const handleDeleteCode = (codeToDelete: string) => {
+  const handleDeleteCode = async (codeToDelete: string) => {
     if (window.confirm(`Adakah anda pasti ingin memadamkan kod ${codeToDelete}?`)) {
       deleteGeneratedCode(codeToDelete);
+      await deleteGeneratedCodeRemote(codeToDelete);
       refreshData();
     }
   };

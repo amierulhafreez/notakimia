@@ -1,9 +1,20 @@
 import { GoogleUser, RedeemedCodeRecord, GeneratedAccessCode } from '../types/auth';
 
 export const STORAGE_KEY_USER = 'nota_kimia_google_user';
-export const STORAGE_KEY_REGISTRY = 'nota_kimia_redeemed_codes_registry';
-export const STORAGE_KEY_PROFILES_REGISTRY = 'nota_kimia_registered_profiles';
-export const STORAGE_KEY_ADMIN_CODES = 'nota_kimia_admin_generated_codes';
+export const STORAGE_KEY_REGISTRY = 'nota_kimia_redeemed_codes_registry_v2';
+export const STORAGE_KEY_PROFILES_REGISTRY = 'nota_kimia_registered_profiles_v2';
+export const STORAGE_KEY_ADMIN_CODES = 'nota_kimia_admin_generated_codes_v2';
+
+// One-time cleanup of legacy shared/contaminated localStorage caches from e-RPH
+try {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    localStorage.removeItem('nota_kimia_redeemed_codes_registry');
+    localStorage.removeItem('nota_kimia_registered_profiles');
+    localStorage.removeItem('nota_kimia_admin_generated_codes');
+  }
+} catch (e) {
+  // ignore
+}
 
 // Chapters available for FREE users:
 // T4: Bab 1, Bab 2, Bab 8
@@ -141,16 +152,7 @@ export const getAllRegisteredStudents = (): GoogleUser[] => {
 export const getAdminGeneratedCodes = (): GeneratedAccessCode[] => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_ADMIN_CODES);
-    if (!raw) {
-      const initial: GeneratedAccessCode[] = [
-        { code: 'HAFREEZ-SPM-2026', note: 'Kod Rasmi Pelancaran', createdAt: Date.now(), isRedeemed: false },
-        { code: 'KIMIA-ELIT-2026', note: 'Kelas Bimbingan Khas SPM', createdAt: Date.now(), isRedeemed: false },
-        { code: 'SPM-A-PLUS-2026', note: 'Bengkel Skor A+', createdAt: Date.now(), isRedeemed: false },
-        { code: 'CIKGU-HAFREEZ-VIP', note: 'Akses Khas Calon Elit', createdAt: Date.now(), isRedeemed: false },
-      ];
-      localStorage.setItem(STORAGE_KEY_ADMIN_CODES, JSON.stringify(initial));
-      return initial;
-    }
+    if (!raw) return [];
     return JSON.parse(raw);
   } catch (err) {
     console.error('Error reading admin codes:', err);

@@ -13,6 +13,7 @@ import {
   getDoc,
   setDoc,
   updateDoc,
+  deleteDoc,
   collection,
   getDocs,
   query,
@@ -225,9 +226,9 @@ export async function syncUserProfile(user: GoogleUser): Promise<boolean> {
  * Load all registered students from Nota Kimia Firestore (synced with local storage)
  */
 export async function fetchAllStudentsRemote(): Promise<GoogleUser[]> {
-  const studentsMap: Record<string, GoogleUser> = {};
+  let studentsMap: Record<string, GoogleUser> = {};
 
-  // Load from local registry first
+  // Load from local registry fallback first
   try {
     const raw = localStorage.getItem(STORAGE_KEY_PROFILES_REGISTRY);
     if (raw) {
@@ -240,24 +241,22 @@ export async function fetchAllStudentsRemote(): Promise<GoogleUser[]> {
     // ignore
   }
 
-  // Load from Nota Kimia Firestore (requires signed-in session per firestore.rules)
+  // Load from Nota Kimia Firestore (authoritative source when signed in)
   if (auth.currentUser) {
     try {
       const colRef = collection(db, 'nota_kimia_users');
       const snap = await getDocs(colRef);
+      const remoteMap: Record<string, GoogleUser> = {};
       snap.forEach((docSnap) => {
         const data = docSnap.data() as GoogleUser;
         if (data && data.email) {
           const key = data.email.toLowerCase().trim();
-          studentsMap[key] = {
-            ...studentsMap[key],
-            ...data,
-          };
+          remoteMap[key] = data;
         }
       });
 
-      // Update local cache
-      localStorage.setItem(STORAGE_KEY_PROFILES_REGISTRY, JSON.stringify(studentsMap));
+      studentsMap = remoteMap;
+      localStorage.setItem(STORAGE_KEY_PROFILES_REGISTRY, JSON.stringify(remoteMap));
     } catch (err: any) {
       if (err?.code !== 'permission-denied') {
         console.warn('Firestore fetch students warning:', err);
@@ -345,12 +344,24 @@ export async function verifyAndRedeemCodeRemote(
 }
 
 /**
+ * Delete a generated access code from Firestore
+ */
+export async function deleteGeneratedCodeRemote(code: string): Promise<void> {
+  if (!auth.currentUser || !code) return;
+  try {
+    await deleteDoc(doc(db, 'nota_kimia_access_codes', code));
+  } catch (err) {
+    console.warn('Firestore delete code warning:', err);
+  }
+}
+
+/**
  * Load all generated access codes from Firestore and local cache (Admin only)
  */
 export async function fetchGeneratedCodesRemote(): Promise<GeneratedAccessCode[]> {
-  const codesMap: Record<string, GeneratedAccessCode> = {};
+  let codesMap: Record<string, GeneratedAccessCode> = {};
 
-  // Local first
+  // Local fallback
   try {
     const raw = localStorage.getItem(STORAGE_KEY_ADMIN_CODES);
     if (raw) {
@@ -363,21 +374,20 @@ export async function fetchGeneratedCodesRemote(): Promise<GeneratedAccessCode[]
     // ignore
   }
 
-  // Firestore
+  // Authoritative Firestore load for admin
   if (auth.currentUser) {
     try {
       const colRef = collection(db, 'nota_kimia_access_codes');
       const snap = await getDocs(colRef);
+      const remoteMap: Record<string, GeneratedAccessCode> = {};
       snap.forEach((docSnap) => {
         const data = docSnap.data() as GeneratedAccessCode;
         if (data && data.code) {
-          codesMap[data.code] = {
-            ...codesMap[data.code],
-            ...data,
-          };
+          remoteMap[data.code] = data;
         }
       });
-      localStorage.setItem(STORAGE_KEY_ADMIN_CODES, JSON.stringify(Object.values(codesMap)));
+      codesMap = remoteMap;
+      localStorage.setItem(STORAGE_KEY_ADMIN_CODES, JSON.stringify(Object.values(remoteMap)));
     } catch (err: any) {
       if (err?.code !== 'permission-denied') {
         console.warn('Firestore fetch codes warning:', err);
