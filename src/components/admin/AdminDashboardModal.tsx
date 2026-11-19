@@ -35,6 +35,8 @@ import {
   fetchAllStudentsRemote,
   fetchGeneratedCodesRemote,
   saveGeneratedCodeRemote,
+  subscribeAuthState,
+  auth,
 } from '../../services/firebase';
 
 interface Props {
@@ -95,9 +97,14 @@ export const AdminDashboardModal: React.FC<Props> = ({
   };
 
   useEffect(() => {
-    if (isOpen && currentUser && isAdminEmail(currentUser.email)) {
-      refreshData();
-    }
+    if (!isOpen || !currentUser || !isAdminEmail(currentUser.email)) return;
+    refreshData();
+    const unsub = subscribeAuthState((fbUser) => {
+      if (fbUser) {
+        refreshData();
+      }
+    });
+    return () => unsub();
   }, [isOpen, currentUser]);
 
   if (!isOpen) return null;
@@ -573,6 +580,13 @@ export const AdminDashboardModal: React.FC<Props> = ({
         {/* Tab 2: Students Monitoring & Analytics */}
         {activeTab === 'students' && (
           <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6">
+            {!auth.currentUser && (
+              <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-center justify-between gap-3">
+                <span>
+                  ⚠️ Sesi Google Firebase belum aktif pada pelayar ini. Sila log keluar dan klik <strong>Log Masuk dengan Google</strong> menggunakan emel admin rasmi anda untuk menarik rekod pelajar daripada awan (Firestore Nota Kimia).
+                </span>
+              </div>
+            )}
             {/* Student KPIs */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
               <div className="p-4 rounded-2xl bg-gradient-to-br from-sky-50 to-sky-100/50 border border-sky-200 flex items-center justify-between">

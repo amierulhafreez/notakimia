@@ -12,10 +12,10 @@ import {
   doc,
   getDoc,
   setDoc,
+  updateDoc,
   collection,
   getDocs,
   query,
-  orderBy,
   limit,
   where,
 } from '@firebase/firestore';
@@ -29,18 +29,19 @@ import {
   STORAGE_KEY_ADMIN_CODES,
 } from '../utils/auth';
 
-// Initialize Firebase App
+// Initialize dedicated Nota Kimia Firebase App
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = firebaseConfig.firestoreDatabaseId
-  ? getFirestore(app, firebaseConfig.firestoreDatabaseId)
+const cfg = firebaseConfig as Record<string, string | undefined>;
+export const db = cfg.firestoreDatabaseId
+  ? getFirestore(app, cfg.firestoreDatabaseId)
   : getFirestore(app);
 
 const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
 /**
- * Remove undefined properties so Firestore setDoc never rejects the payload
+ * Remove undefined properties so Firestore setDoc/updateDoc never rejects the payload
  */
 function stripUndefined<T extends Record<string, any>>(obj: T): Record<string, any> {
   const clean: Record<string, any> = {};
@@ -87,7 +88,8 @@ export async function loginDenganGoogleReal(): Promise<{
     if (code === 'auth/popup-blocked') {
       return {
         success: false,
-        errorMessage: 'Pelayar anda menyekat tetingkap popup Google. Sila benarkan tetingkap timbul (pop-up) untuk meneruskan log masuk.',
+        errorMessage:
+          'Pelayar anda menyekat tetingkap popup Google. Sila benarkan tetingkap timbul (pop-up) untuk meneruskan log masuk.',
       };
     }
 
@@ -107,7 +109,7 @@ export async function loginDenganGoogleReal(): Promise<{
   const cleanEmail = fbUser.email.toLowerCase().trim();
   const isAdmin = isAdminEmail(cleanEmail);
 
-  // Check if profile exists in Firestore (by UID first, then by email)
+  // Check if profile exists in Nota Kimia Firestore (by UID first, then by email)
   let existingProfile: Partial<GoogleUser> | null = null;
   try {
     const userDocRef = doc(db, 'nota_kimia_users', fbUser.uid);
@@ -126,7 +128,7 @@ export async function loginDenganGoogleReal(): Promise<{
       }
     }
   } catch (firestoreErr) {
-    console.warn('Firestore read error (offline/permission):', firestoreErr);
+    console.warn('Firestore read warning:', firestoreErr);
   }
 
   // Also check local registry fallback
@@ -152,7 +154,10 @@ export async function loginDenganGoogleReal(): Promise<{
     name: existingProfile?.name || fbUser.displayName || 'Calon Kimia SPM',
     school: existingProfile?.school || '',
     state: existingProfile?.state || 'Selangor',
-    avatar: fbUser.photoURL || existingProfile?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+    avatar:
+      fbUser.photoURL ||
+      existingProfile?.avatar ||
+      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
     isPremium: isAdmin ? true : (existingProfile?.isPremium ?? false),
     role: isAdmin ? 'admin' : 'student',
     ...(existingProfile?.redeemedCode ? { redeemedCode: existingProfile.redeemedCode } : {}),
@@ -166,7 +171,7 @@ export async function loginDenganGoogleReal(): Promise<{
     badgesCount: existingProfile?.badgesCount || 0,
   };
 
-  // Sync to Firestore & localStorage
+  // Sync to Nota Kimia Firestore & localStorage
   await syncUserProfile(resolvedUser);
   saveCurrentUser(resolvedUser);
 
@@ -178,24 +183,34 @@ export async function loginDenganGoogleReal(): Promise<{
 }
 
 /**
- * Save / Update user profile in Firestore and localStorage
+ * Save / Update user profile in Nota Kimia Firestore (nota_kimia_users) and localStorage
  */
 export async function syncUserProfile(user: GoogleUser): Promise<boolean> {
-  // 1. Update localStorage registry
+  const cleanEmail = user.email.toLowerCase().trim();
   const payload: GoogleUser = {
     ...user,
+    email: cleanEmail,
     lastLoginAt: user.lastLoginAt || Date.now(),
   };
+
+  // 1. Update localStorage registry
   saveRegisteredProfile(payload);
 
-  // 2. Update Firestore (must strip undefined fields!)
+  // 2. Only write to Firestore if Firebase Auth session is active for owner or admin
+  const fbUser = auth.currentUser;
+  if (!fbUser) return false;
+
+  const docId = payload.id || fbUser.uid;
+  if (fbUser.uid !== docId && !isAdminEmail(fbUser.email || '')) {
+    return false;
+  }
+
   try {
-    const docId = payload.id || payload.email.toLowerCase().trim();
     const userDocRef = doc(db, 'nota_kimia_users', docId);
     const cleanPayload = stripUndefined({
       ...payload,
       id: docId,
-      email: payload.email.toLowerCase().trim(),
+      email: cleanEmail,
       lastLoginAt: Date.now(),
     });
     await setDoc(userDocRef, cleanPayload, { merge: true });
@@ -207,7 +222,7 @@ export async function syncUserProfile(user: GoogleUser): Promise<boolean> {
 }
 
 /**
- * Load all registered students from Firestore (synced with local storage)
+ * Load all registered students from Nota Kimia Firestore (synced with local storage)
  */
 export async function fetchAllStudentsRemote(): Promise<GoogleUser[]> {
   const studentsMap: Record<string, GoogleUser> = {};
@@ -225,25 +240,29 @@ export async function fetchAllStudentsRemote(): Promise<GoogleUser[]> {
     // ignore
   }
 
-  // Load from Firestore
-  try {
-    const colRef = collection(db, 'nota_kimia_users');
-    const snap = await getDocs(colRef);
-    snap.forEach((docSnap) => {
-      const data = docSnap.data() as GoogleUser;
-      if (data && data.email) {
-        const key = data.email.toLowerCase().trim();
-        studentsMap[key] = {
-          ...studentsMap[key],
-          ...data,
-        };
-      }
-    });
+  // Load from Nota Kimia Firestore (requires signed-in session per firestore.rules)
+  if (auth.currentUser) {
+    try {
+      const colRef = collection(db, 'nota_kimia_users');
+      const snap = await getDocs(colRef);
+      snap.forEach((docSnap) => {
+        const data = docSnap.data() as GoogleUser;
+        if (data && data.email) {
+          const key = data.email.toLowerCase().trim();
+          studentsMap[key] = {
+            ...studentsMap[key],
+            ...data,
+          };
+        }
+      });
 
-    // Update local cache
-    localStorage.setItem(STORAGE_KEY_PROFILES_REGISTRY, JSON.stringify(studentsMap));
-  } catch (err) {
-    console.warn('Firestore fetch students warning:', err);
+      // Update local cache
+      localStorage.setItem(STORAGE_KEY_PROFILES_REGISTRY, JSON.stringify(studentsMap));
+    } catch (err: any) {
+      if (err?.code !== 'permission-denied') {
+        console.warn('Firestore fetch students warning:', err);
+      }
+    }
   }
 
   return Object.values(studentsMap)
@@ -252,9 +271,10 @@ export async function fetchAllStudentsRemote(): Promise<GoogleUser[]> {
 }
 
 /**
- * Sync access codes to Firestore
+ * Sync generated access codes to Nota Kimia Firestore
  */
 export async function saveGeneratedCodeRemote(codeDoc: GeneratedAccessCode): Promise<void> {
+  if (!auth.currentUser) return;
   try {
     const codeRef = doc(db, 'nota_kimia_access_codes', codeDoc.code);
     await setDoc(codeRef, stripUndefined(codeDoc), { merge: true });
@@ -264,7 +284,68 @@ export async function saveGeneratedCodeRemote(codeDoc: GeneratedAccessCode): Pro
 }
 
 /**
- * Load all generated access codes from Firestore and local cache
+ * Verify and redeem an access code remotely in Firestore across devices
+ */
+export async function verifyAndRedeemCodeRemote(
+  rawCode: string,
+  user: GoogleUser
+): Promise<{ checkedRemote: boolean; allowed: boolean; message?: string; remoteDoc?: GeneratedAccessCode }> {
+  const cleanCode = rawCode.trim().toUpperCase();
+  if (!auth.currentUser || !cleanCode) {
+    return { checkedRemote: false, allowed: true };
+  }
+
+  try {
+    const codeRef = doc(db, 'nota_kimia_access_codes', cleanCode);
+    const snap = await getDoc(codeRef);
+    if (!snap.exists()) {
+      return { checkedRemote: true, allowed: true };
+    }
+
+    const data = snap.data() as GeneratedAccessCode;
+    if (data.targetEmail && data.targetEmail.toLowerCase().trim() !== user.email.toLowerCase().trim()) {
+      return {
+        checkedRemote: true,
+        allowed: false,
+        message: `Kod Akses ini dikhaskan untuk akaun Google (${data.targetEmail}). Akaun Google semasa anda (${user.email}) tidak sepadan.`,
+      };
+    }
+
+    if (data.isRedeemed && data.redeemedByEmail && data.redeemedByEmail.toLowerCase().trim() !== user.email.toLowerCase().trim()) {
+      const parts = data.redeemedByEmail.split('@');
+      const namePart = parts[0] || '';
+      const domainPart = parts[1] || 'gmail.com';
+      const obfuscated =
+        namePart.length > 2
+          ? `${namePart[0]}***${namePart[namePart.length - 1]}@${domainPart}`
+          : `*@${domainPart}`;
+      return {
+        checkedRemote: true,
+        allowed: false,
+        message: `Kod Akses Khas ini telah ditebus oleh akaun Google lain (${obfuscated}) dan tidak boleh dikongsi.`,
+      };
+    }
+
+    // Mark as redeemed in Firestore if not already marked
+    if (!data.isRedeemed) {
+      await updateDoc(codeRef, {
+        code: data.code,
+        isRedeemed: true,
+        redeemedByEmail: user.email.toLowerCase().trim(),
+        redeemedByName: user.name,
+        redeemedAt: Date.now(),
+      });
+    }
+
+    return { checkedRemote: true, allowed: true, remoteDoc: data };
+  } catch (err: any) {
+    console.warn('Remote code check warning:', err?.code, err?.message);
+    return { checkedRemote: false, allowed: true };
+  }
+}
+
+/**
+ * Load all generated access codes from Firestore and local cache (Admin only)
  */
 export async function fetchGeneratedCodesRemote(): Promise<GeneratedAccessCode[]> {
   const codesMap: Record<string, GeneratedAccessCode> = {};
@@ -283,24 +364,35 @@ export async function fetchGeneratedCodesRemote(): Promise<GeneratedAccessCode[]
   }
 
   // Firestore
-  try {
-    const colRef = collection(db, 'nota_kimia_access_codes');
-    const snap = await getDocs(colRef);
-    snap.forEach((docSnap) => {
-      const data = docSnap.data() as GeneratedAccessCode;
-      if (data && data.code) {
-        codesMap[data.code] = {
-          ...codesMap[data.code],
-          ...data,
-        };
+  if (auth.currentUser) {
+    try {
+      const colRef = collection(db, 'nota_kimia_access_codes');
+      const snap = await getDocs(colRef);
+      snap.forEach((docSnap) => {
+        const data = docSnap.data() as GeneratedAccessCode;
+        if (data && data.code) {
+          codesMap[data.code] = {
+            ...codesMap[data.code],
+            ...data,
+          };
+        }
+      });
+      localStorage.setItem(STORAGE_KEY_ADMIN_CODES, JSON.stringify(Object.values(codesMap)));
+    } catch (err: any) {
+      if (err?.code !== 'permission-denied') {
+        console.warn('Firestore fetch codes warning:', err);
       }
-    });
-    localStorage.setItem(STORAGE_KEY_ADMIN_CODES, JSON.stringify(Object.values(codesMap)));
-  } catch (err) {
-    console.warn('Firestore fetch codes warning:', err);
+    }
   }
 
   return Object.values(codesMap).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+}
+
+/**
+ * Listen to Firebase Auth state changes
+ */
+export function subscribeAuthState(callback: (fbUser: FirebaseUser | null) => void): () => void {
+  return onAuthStateChanged(auth, callback);
 }
 
 /**

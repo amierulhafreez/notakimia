@@ -32,7 +32,7 @@ import {
   hasFullAccess,
   incrementExamAttempts,
 } from './utils/auth';
-import { syncUserProfile, logKeluarFirebase } from './services/firebase';
+import { syncUserProfile, logKeluarFirebase, subscribeAuthState } from './services/firebase';
 
 export const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<'dashboard' | 'reader'>('dashboard');
@@ -63,13 +63,38 @@ export const App: React.FC = () => {
   const [examInitialMode, setExamInitialMode] = useState<ExamMode>('ALL');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Sync auth state changes across windows/events
+  // Sync auth state changes across windows/events & restore Firebase Auth session
   useEffect(() => {
     const handleAuthChange = () => {
       setCurrentUser(getCurrentUser());
     };
     window.addEventListener('auth_state_changed', handleAuthChange);
-    return () => window.removeEventListener('auth_state_changed', handleAuthChange);
+
+    const unsubscribe = subscribeAuthState((fbUser) => {
+      const localUser = getCurrentUser();
+      if (fbUser && localUser && fbUser.uid === localUser.id) {
+        const completedCount = userProgress.completedSubtopics.length;
+        const quizEntries = Object.entries(userProgress.quizScores);
+        const totalQuestions = quizEntries.reduce((acc, [, q]) => acc + q.total, 0);
+        const totalCorrect = quizEntries.reduce((acc, [, q]) => acc + q.score, 0);
+        const quizAccuracy = totalQuestions > 0 ? Math.round((totalCorrect / totalQuestions) * 100) : 0;
+        const perfectQuizzes = quizEntries.filter(([, q]) => q.score === q.total && q.total > 0).length;
+        const examCount = quizEntries.filter(([k]) => k.startsWith('exam-')).length;
+        const userXP = completedCount * 100 + totalCorrect * 20 + perfectQuizzes * 50 + examCount * 80;
+
+        syncUserProfile({
+          ...localUser,
+          xp: userXP,
+          completedSubtopicsCount: completedCount,
+          quizAccuracy,
+        }).catch(() => {});
+      }
+    });
+
+    return () => {
+      window.removeEventListener('auth_state_changed', handleAuthChange);
+      unsubscribe();
+    };
   }, []);
 
   // Automatically sync live XP, progress, and login presence to Firestore for logged-in users

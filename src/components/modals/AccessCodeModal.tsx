@@ -15,7 +15,7 @@ import {
 import confetti from 'canvas-confetti';
 import { GoogleUser } from '../../types/auth';
 import { redeemAccessCode, getAdminGeneratedCodes } from '../../utils/auth';
-import { syncUserProfile, saveGeneratedCodeRemote } from '../../services/firebase';
+import { syncUserProfile, saveGeneratedCodeRemote, verifyAndRedeemCodeRemote } from '../../services/firebase';
 
 interface Props {
   isOpen: boolean;
@@ -41,13 +41,20 @@ export const AccessCodeModal: React.FC<Props> = ({
 
   if (!isOpen || !currentUser) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
     setSuccessMsg('');
     setIsSubmitting(true);
 
-    setTimeout(() => {
+    try {
+      const remoteCheck = await verifyAndRedeemCodeRemote(code, currentUser);
+      if (!remoteCheck.allowed) {
+        setIsSubmitting(false);
+        setErrorMsg(remoteCheck.message || 'Kod Akses ini tidak sah atau telah ditebus.');
+        return;
+      }
+
       const result = redeemAccessCode(code, currentUser);
       setIsSubmitting(false);
 
@@ -71,7 +78,10 @@ export const AccessCodeModal: React.FC<Props> = ({
       } else {
         setErrorMsg(result.message);
       }
-    }, 400);
+    } catch (err) {
+      setIsSubmitting(false);
+      setErrorMsg('Ralat menyemak kod akses. Sila cuba lagi.');
+    }
   };
 
   return (

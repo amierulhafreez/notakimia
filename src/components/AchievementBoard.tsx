@@ -27,7 +27,7 @@ import {
 import { UserStudyProgress } from '../types/nota';
 import { GoogleUser } from '../types/auth';
 import { isAdminEmail, getAllRegisteredStudents } from '../utils/auth';
-import { fetchAllStudentsRemote, syncUserProfile } from '../services/firebase';
+import { fetchAllStudentsRemote, syncUserProfile, subscribeAuthState } from '../services/firebase';
 
 interface Props {
   userProgress: UserStudyProgress;
@@ -101,6 +101,12 @@ export const AchievementBoard: React.FC<Props> = ({
 
   useEffect(() => {
     loadLeaderboardUsers();
+    const unsub = subscribeAuthState((fbUser) => {
+      if (fbUser) {
+        loadLeaderboardUsers();
+      }
+    });
+    return () => unsub();
   }, [activeTab, currentUser?.email]);
 
   // Sync profile reactively whenever auth state changes

@@ -1,12 +1,8 @@
 {
-  "projectId": "gen-lang-client-0482643226",
-  "appId": "1:992263847989:web:6c6d37b5a1b7d6b1fe317c",
-  "apiKey": "AIzaSyBAntrEZSEG_siPw9-aBVcYpP8yJOz8kow",
-  "authDomain": "gen-lang-client-0482643226.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-erphkimiakssmpin-c15d2b9a-f8db-4d28-9ac8-2b82bd298c50",
-  "storageBucket": "gen-lang-client-0482643226.firebasestorage.app",
-  "messagingSenderId": "992263847989",
-  "measurementId": "",
-  "oAuthClientId": "992263847989-ujeo910qifn0shtuev4170svbsvqk37q.apps.googleusercontent.com",
-  "recaptchaSiteKey": ""
+  "projectId": "nota-kimia-spm",
+  "appId": "1:21117702776:web:e9da7373af6ea79011138d",
+  "apiKey": "AIzaSyAFoDIUp9HnqdDUY6Mdc50vIoZUqPkVypA",
+  "authDomain": "nota-kimia-spm.firebaseapp.com",
+  "storageBucket": "nota-kimia-spm.firebasestorage.app",
+  "messagingSenderId": "21117702776"
 }
