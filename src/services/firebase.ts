@@ -29,6 +29,7 @@ import {
   STORAGE_KEY_PROFILES_REGISTRY,
   STORAGE_KEY_ADMIN_CODES,
 } from '../utils/auth';
+import { saveProgress } from '../utils/storage';
 
 // Initialize dedicated Nota Kimia Firebase App
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
@@ -42,13 +43,16 @@ const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
 /**
- * Remove undefined properties so Firestore setDoc/updateDoc never rejects the payload
+ * Recursively remove undefined properties so Firestore setDoc/updateDoc never rejects the payload
  */
 function stripUndefined<T extends Record<string, any>>(obj: T): Record<string, any> {
   const clean: Record<string, any> = {};
   Object.keys(obj).forEach((key) => {
     const val = obj[key];
-    if (val !== undefined) {
+    if (val === undefined) return;
+    if (val !== null && typeof val === 'object' && !Array.isArray(val)) {
+      clean[key] = stripUndefined(val);
+    } else {
       clean[key] = val;
     }
   });
@@ -170,7 +174,13 @@ export async function loginDenganGoogleReal(): Promise<{
     completedSubtopicsCount: existingProfile?.completedSubtopicsCount || 0,
     quizAccuracy: existingProfile?.quizAccuracy || 0,
     badgesCount: existingProfile?.badgesCount || 0,
+    ...(existingProfile?.studyProgress ? { studyProgress: existingProfile.studyProgress } : {}),
   };
+
+  // Restore this specific user's saved studyProgress into their scoped localStorage key
+  if (existingProfile?.studyProgress) {
+    saveProgress(existingProfile.studyProgress, cleanEmail);
+  }
 
   // Sync to Nota Kimia Firestore & localStorage
   await syncUserProfile(resolvedUser);

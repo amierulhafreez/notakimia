@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { FULL_CHAPTERS, getChapterById } from './data/chaptersIndex';
 import { TopBar } from './components/TopBar';
 import { DashboardView } from './components/DashboardView';
@@ -22,6 +22,8 @@ import {
   recordLastRead,
   toggleSubtopicComplete,
   recordQuizScore,
+  createEmptyProgress,
+  clearGuestProgress,
 } from './utils/storage';
 import { SearchResultItem, UserStudyProgress, ChapterMeta, FormLevel } from './types/nota';
 import { GoogleUser } from './types/auth';
@@ -38,10 +40,12 @@ export const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<'dashboard' | 'reader'>('dashboard');
   const [activeChapterId, setActiveChapterId] = useState<string>('t4-b1');
   const [activeSubtopicId, setActiveSubtopicId] = useState<string>('t4-b1-s1');
-  const [userProgress, setUserProgress] = useState<UserStudyProgress>(getInitialProgress());
-
   // Authentication State (Google Sign-In)
   const [currentUser, setCurrentUser] = useState<GoogleUser | null>(() => getCurrentUser());
+  const progressOwnerRef = useRef<string | null>(currentUser?.email?.toLowerCase().trim() || null);
+  const [userProgress, setUserProgress] = useState<UserStudyProgress>(() =>
+    getInitialProgress(currentUser?.email)
+  );
   const [loginModalOpen, setLoginModalOpen] = useState(false);
   const [loginTriggerReason, setLoginTriggerReason] = useState<string | undefined>(undefined);
 
@@ -63,30 +67,44 @@ export const App: React.FC = () => {
   const [examInitialMode, setExamInitialMode] = useState<ExamMode>('ALL');
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  const computeUserStats = (progress: UserStudyProgress) => {
+    const completedCount = progress.completedSubtopics.length;
+    const quizEntries = Object.entries(progress.quizScores);
+    const totalQuestions = quizEntries.reduce((acc, [, q]) => acc + q.total, 0);
+    const totalCorrect = quizEntries.reduce((acc, [, q]) => acc + q.score, 0);
+    const quizAccuracy = totalQuestions > 0 ? Math.round((totalCorrect / totalQuestions) * 100) : 0;
+    const perfectQuizzes = quizEntries.filter(([, q]) => q.score === q.total && q.total > 0).length;
+    const examCount = quizEntries.filter(([k]) => k.startsWith('exam-')).length;
+    const userXP = completedCount * 100 + totalCorrect * 20 + perfectQuizzes * 50 + examCount * 80;
+    return { completedCount, quizAccuracy, userXP };
+  };
+
   // Sync auth state changes across windows/events & restore Firebase Auth session
   useEffect(() => {
     const handleAuthChange = () => {
-      setCurrentUser(getCurrentUser());
+      const nextUser = getCurrentUser();
+      const nextEmail = nextUser?.email?.toLowerCase().trim() || null;
+      if (progressOwnerRef.current !== nextEmail) {
+        progressOwnerRef.current = nextEmail;
+        setUserProgress(nextEmail ? getInitialProgress(nextEmail) : createEmptyProgress());
+      }
+      setCurrentUser(nextUser);
     };
     window.addEventListener('auth_state_changed', handleAuthChange);
 
     const unsubscribe = subscribeAuthState((fbUser) => {
       const localUser = getCurrentUser();
-      if (fbUser && localUser && fbUser.uid === localUser.id) {
-        const completedCount = userProgress.completedSubtopics.length;
-        const quizEntries = Object.entries(userProgress.quizScores);
-        const totalQuestions = quizEntries.reduce((acc, [, q]) => acc + q.total, 0);
-        const totalCorrect = quizEntries.reduce((acc, [, q]) => acc + q.score, 0);
-        const quizAccuracy = totalQuestions > 0 ? Math.round((totalCorrect / totalQuestions) * 100) : 0;
-        const perfectQuizzes = quizEntries.filter(([, q]) => q.score === q.total && q.total > 0).length;
-        const examCount = quizEntries.filter(([k]) => k.startsWith('exam-')).length;
-        const userXP = completedCount * 100 + totalCorrect * 20 + perfectQuizzes * 50 + examCount * 80;
+      const localEmail = localUser?.email?.toLowerCase().trim() || null;
+      if (fbUser && localUser && localEmail && fbUser.uid === localUser.id) {
+        const scopedProgress = getInitialProgress(localEmail);
+        const { completedCount, quizAccuracy, userXP } = computeUserStats(scopedProgress);
 
         syncUserProfile({
           ...localUser,
           xp: userXP,
           completedSubtopicsCount: completedCount,
           quizAccuracy,
+          studyProgress: scopedProgress,
         }).catch(() => {});
       }
     });
@@ -97,23 +115,20 @@ export const App: React.FC = () => {
     };
   }, []);
 
-  // Automatically sync live XP, progress, and login presence to Firestore for logged-in users
+  // Automatically sync live XP, progress, and login presence to Firestore ONLY when owner matches
   useEffect(() => {
     if (!currentUser || !currentUser.email) return;
-    const completedCount = userProgress.completedSubtopics.length;
-    const quizEntries = Object.entries(userProgress.quizScores);
-    const totalQuestions = quizEntries.reduce((acc, [, q]) => acc + q.total, 0);
-    const totalCorrect = quizEntries.reduce((acc, [, q]) => acc + q.score, 0);
-    const quizAccuracy = totalQuestions > 0 ? Math.round((totalCorrect / totalQuestions) * 100) : 0;
-    const perfectQuizzes = quizEntries.filter(([, q]) => q.score === q.total && q.total > 0).length;
-    const examCount = quizEntries.filter(([k]) => k.startsWith('exam-')).length;
-    const userXP = completedCount * 100 + totalCorrect * 20 + perfectQuizzes * 50 + examCount * 80;
+    const activeEmail = currentUser.email.toLowerCase().trim();
+    if (progressOwnerRef.current !== activeEmail) return;
+
+    const { completedCount, quizAccuracy, userXP } = computeUserStats(userProgress);
 
     syncUserProfile({
       ...currentUser,
       xp: userXP,
       completedSubtopicsCount: completedCount,
       quizAccuracy,
+      studyProgress: userProgress,
     }).catch(() => {});
   }, [currentUser?.id, currentUser?.email, currentUser?.name, currentUser?.school, currentUser?.state, userProgress]);
 
@@ -201,7 +216,7 @@ export const App: React.FC = () => {
     setActiveSubtopicId(subtopicToOpen);
     setCurrentView('reader');
 
-    const updated = recordLastRead(chapterId, subtopicToOpen, userProgress);
+    const updated = recordLastRead(chapterId, subtopicToOpen, userProgress, currentUser?.email);
     setUserProgress(updated);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -225,7 +240,7 @@ export const App: React.FC = () => {
 
   const handleSelectSubtopic = (subtopicId: string) => {
     setActiveSubtopicId(subtopicId);
-    const updated = recordLastRead(activeChapterId, subtopicId, userProgress);
+    const updated = recordLastRead(activeChapterId, subtopicId, userProgress, currentUser?.email);
     setUserProgress(updated);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -277,12 +292,12 @@ export const App: React.FC = () => {
   };
 
   const handleToggleComplete = (subtopicId: string) => {
-    const updated = toggleSubtopicComplete(subtopicId, userProgress);
+    const updated = toggleSubtopicComplete(subtopicId, userProgress, currentUser?.email);
     setUserProgress(updated);
   };
 
   const handleRecordQuiz = (subtopicId: string, score: number, total: number) => {
-    const updated = recordQuizScore(subtopicId, score, total, userProgress);
+    const updated = recordQuizScore(subtopicId, score, total, userProgress, currentUser?.email);
     setUserProgress(updated);
   };
 
@@ -316,7 +331,10 @@ export const App: React.FC = () => {
   const handleSignOut = () => {
     logKeluarFirebase().catch(() => {});
     saveCurrentUser(null);
+    clearGuestProgress();
+    progressOwnerRef.current = null;
     setCurrentUser(null);
+    setUserProgress(createEmptyProgress());
     setCurrentView('dashboard');
     showToast('Anda telah berjaya log keluar.');
   };
@@ -414,7 +432,11 @@ export const App: React.FC = () => {
         isOpen={loginModalOpen}
         onClose={() => setLoginModalOpen(false)}
         onLoginSuccess={(user) => {
+          const nextEmail = user.email.toLowerCase().trim();
+          const nextProgress = user.studyProgress || getInitialProgress(nextEmail);
+          progressOwnerRef.current = nextEmail;
           setCurrentUser(user);
+          setUserProgress(nextProgress);
           setLoginModalOpen(false);
           showToast(`Selamat kembali, ${user.name}!`);
         }}

@@ -1,35 +1,75 @@
 import { UserStudyProgress } from '../types/nota';
 
-const STORAGE_KEY = 'nota_kimia_user_progress_v1';
+const LEGACY_STORAGE_KEY = 'nota_kimia_user_progress_v1';
+const STORAGE_KEY_PREFIX = 'nota_kimia_user_progress_v2_';
 
-export const getInitialProgress = (): UserStudyProgress => {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      return JSON.parse(saved);
-    }
-  } catch (e) {
-    console.error('Failed to load progress from localStorage', e);
+// Remove legacy un-scoped shared progress key so progress never leaks between accounts
+try {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
   }
-  return {
-    completedSubtopics: [],
-    lastReadSubtopicId: null,
-    lastReadChapterId: null,
-    quizScores: {},
-  };
+} catch (e) {
+  // ignore
+}
+
+export const createEmptyProgress = (): UserStudyProgress => ({
+  completedSubtopics: [],
+  lastReadSubtopicId: null,
+  lastReadChapterId: null,
+  quizScores: {},
+});
+
+export const getProgressStorageKey = (userKey?: string | null): string => {
+  if (!userKey || !userKey.trim()) {
+    return `${STORAGE_KEY_PREFIX}guest`;
+  }
+  const cleanKey = userKey.toLowerCase().trim().replace(/[^a-z0-9@._-]/g, '_');
+  return `${STORAGE_KEY_PREFIX}${cleanKey}`;
 };
 
-export const saveProgress = (progress: UserStudyProgress): void => {
+export const getInitialProgress = (userKey?: string | null): UserStudyProgress => {
+  if (!userKey || !userKey.trim()) {
+    return createEmptyProgress();
+  }
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(progress));
+    const key = getProgressStorageKey(userKey);
+    const saved = localStorage.getItem(key);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      return {
+        completedSubtopics: Array.isArray(parsed.completedSubtopics) ? parsed.completedSubtopics : [],
+        lastReadSubtopicId: parsed.lastReadSubtopicId || null,
+        lastReadChapterId: parsed.lastReadChapterId || null,
+        quizScores: parsed.quizScores && typeof parsed.quizScores === 'object' ? parsed.quizScores : {},
+      };
+    }
   } catch (e) {
-    console.error('Failed to save progress to localStorage', e);
+    console.error('Failed to load user progress from localStorage', e);
+  }
+  return createEmptyProgress();
+};
+
+export const saveProgress = (progress: UserStudyProgress, userKey?: string | null): void => {
+  try {
+    const key = getProgressStorageKey(userKey);
+    localStorage.setItem(key, JSON.stringify(progress));
+  } catch (e) {
+    console.error('Failed to save user progress to localStorage', e);
+  }
+};
+
+export const clearGuestProgress = (): void => {
+  try {
+    localStorage.removeItem(`${STORAGE_KEY_PREFIX}guest`);
+  } catch (e) {
+    // ignore
   }
 };
 
 export const toggleSubtopicComplete = (
   subtopicId: string,
-  progress: UserStudyProgress
+  progress: UserStudyProgress,
+  userKey?: string | null
 ): UserStudyProgress => {
   const isCompleted = progress.completedSubtopics.includes(subtopicId);
   const updatedCompleted = isCompleted
@@ -40,21 +80,22 @@ export const toggleSubtopicComplete = (
     ...progress,
     completedSubtopics: updatedCompleted,
   };
-  saveProgress(newProgress);
+  saveProgress(newProgress, userKey);
   return newProgress;
 };
 
 export const recordLastRead = (
   chapterId: string,
   subtopicId: string,
-  progress: UserStudyProgress
+  progress: UserStudyProgress,
+  userKey?: string | null
 ): UserStudyProgress => {
   const newProgress: UserStudyProgress = {
     ...progress,
     lastReadChapterId: chapterId,
     lastReadSubtopicId: subtopicId,
   };
-  saveProgress(newProgress);
+  saveProgress(newProgress, userKey);
   return newProgress;
 };
 
@@ -62,7 +103,8 @@ export const recordQuizScore = (
   subtopicId: string,
   score: number,
   total: number,
-  progress: UserStudyProgress
+  progress: UserStudyProgress,
+  userKey?: string | null
 ): UserStudyProgress => {
   const newProgress: UserStudyProgress = {
     ...progress,
@@ -75,6 +117,6 @@ export const recordQuizScore = (
       },
     },
   };
-  saveProgress(newProgress);
+  saveProgress(newProgress, userKey);
   return newProgress;
 };

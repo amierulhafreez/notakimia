@@ -1,3 +1,5 @@
+import { UserStudyProgress } from './nota';
+
 export interface GoogleUser {
   id: string;
   email: string;
@@ -16,6 +18,7 @@ export interface GoogleUser {
   completedSubtopicsCount?: number;
   quizAccuracy?: number;
   badgesCount?: number;
+  studyProgress?: UserStudyProgress;
 }
 
 export interface RedeemedCodeRecord {

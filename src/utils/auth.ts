@@ -266,10 +266,18 @@ export const saveCurrentUser = (user: GoogleUser | null) => {
       };
       localStorage.setItem(STORAGE_KEY_USER, JSON.stringify(safeUser));
       saveRegisteredProfile(safeUser);
-      // Also sync student name, school and state for the achievement board
+      // Also sync student name, school and state cleanly (remove stale values if blank)
       localStorage.setItem('nota_kimia_student_name', safeUser.name);
-      if (safeUser.school) localStorage.setItem('nota_kimia_student_school', safeUser.school);
-      if (safeUser.state) localStorage.setItem('nota_kimia_student_state', safeUser.state);
+      if (safeUser.school) {
+        localStorage.setItem('nota_kimia_student_school', safeUser.school);
+      } else {
+        localStorage.removeItem('nota_kimia_student_school');
+      }
+      if (safeUser.state) {
+        localStorage.setItem('nota_kimia_student_state', safeUser.state);
+      } else {
+        localStorage.removeItem('nota_kimia_student_state');
+      }
     }
     // Dispatch custom event for reactive UI updates across tabs/components
     window.dispatchEvent(new Event('auth_state_changed'));
