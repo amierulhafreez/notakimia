@@ -19,6 +19,9 @@ export interface GoogleUser {
   quizAccuracy?: number;
   badgesCount?: number;
   studyProgress?: UserStudyProgress;
+  directGrantNote?: string;
+  directGrantedAt?: number;
+  directGrantedBy?: string;
 }
 
 export interface RedeemedCodeRecord {

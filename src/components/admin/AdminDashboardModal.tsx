@@ -36,6 +36,8 @@ import {
   fetchGeneratedCodesRemote,
   saveGeneratedCodeRemote,
   deleteGeneratedCodeRemote,
+  grantDirectVipAccessRemote,
+  revokeDirectVipAccessRemote,
   subscribeAuthState,
   auth,
 } from '../../services/firebase';
@@ -64,6 +66,15 @@ export const AdminDashboardModal: React.FC<Props> = ({
   const [allEmailsCopied, setAllEmailsCopied] = useState(false);
   const [codeFilter, setCodeFilter] = useState<'all' | 'available' | 'redeemed'>('all');
   const [searchCodeQuery, setSearchCodeQuery] = useState('');
+
+  // Direct VIP Grant State (Auto-grant without code + Note)
+  const [generatorMode, setGeneratorMode] = useState<'code' | 'direct'>('code');
+  const [directTargetEmail, setDirectTargetEmail] = useState('');
+  const [directGrantNote, setDirectGrantNote] = useState('');
+  const [directGrantStudentModal, setDirectGrantStudentModal] = useState<GoogleUser | null>(null);
+  const [directGrantModalNote, setDirectGrantModalNote] = useState('');
+  const [isGrantingVip, setIsGrantingVip] = useState(false);
+  const [grantFeedback, setGrantFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Students Monitoring State
   const [students, setStudents] = useState<GoogleUser[]>([]);
@@ -132,7 +143,72 @@ export const AdminDashboardModal: React.FC<Props> = ({
     setTargetEmail(student.email);
     setGenerateNote(`Khas untuk ${student.name} (${student.school || 'SPM'})`);
     setGenerateCount(1);
+    setGeneratorMode('code');
     setActiveTab('generator');
+  };
+
+  // Handle Direct VIP Grant from Tab 1 Form
+  const handleDirectGrantSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setGrantFeedback(null);
+    const cleanEmail = directTargetEmail.trim().toLowerCase();
+    if (!cleanEmail) {
+      setGrantFeedback({ type: 'error', text: 'Sila pilih atau masukkan emel murid terlebih dahulu.' });
+      return;
+    }
+
+    const matchedStudent = students.find((s) => s.email.toLowerCase().trim() === cleanEmail);
+    if (!matchedStudent) {
+      setGrantFeedback({
+        type: 'error',
+        text: `Akaun Google "${cleanEmail}" belum pernah log masuk ke Nota Kimia. Minta murid log masuk sekali dahulu, atau gunakan mod Jana Kod Akses.`,
+      });
+      return;
+    }
+
+    setIsGrantingVip(true);
+    const ok = await grantDirectVipAccessRemote(matchedStudent, directGrantNote, currentUser.email);
+    setIsGrantingVip(false);
+
+    if (ok) {
+      setGrantFeedback({
+        type: 'success',
+        text: `✅ Akses VIP Penuh berjaya diaktifkan terus untuk ${matchedStudent.name} (${matchedStudent.email}) tanpa perlu kod!`,
+      });
+      setDirectTargetEmail('');
+      setDirectGrantNote('');
+      refreshData();
+    } else {
+      setGrantFeedback({
+        type: 'error',
+        text: 'Rekod disimpan secara tempatan, tetapi penyelarasan awan gagal. Pastikan anda telah log masuk dengan Google Admin.',
+      });
+    }
+  };
+
+  // Handle Direct VIP Grant from Tab 2 Inline Modal
+  const handleConfirmStudentDirectGrant = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!directGrantStudentModal) return;
+    setIsGrantingVip(true);
+    await grantDirectVipAccessRemote(directGrantStudentModal, directGrantModalNote, currentUser.email);
+    setIsGrantingVip(false);
+    setGrantFeedback({
+      type: 'success',
+      text: `✅ Akses VIP Penuh diaktifkan terus untuk ${directGrantStudentModal.name}!`,
+    });
+    setDirectGrantStudentModal(null);
+    setDirectGrantModalNote('');
+    refreshData();
+  };
+
+  // Handle Revoke Direct VIP
+  const handleRevokeDirectVip = async (student: GoogleUser) => {
+    if (!window.confirm(`Adakah anda pasti mahu menarik balik Akses VIP Terus daripada ${student.name} (${student.email})?`)) {
+      return;
+    }
+    await revokeDirectVipAccessRemote(student);
+    refreshData();
   };
 
   // Handle Delete Code
@@ -333,14 +409,43 @@ export const AdminDashboardModal: React.FC<Props> = ({
               </div>
             </div>
 
-            {/* Code Generator Form with Target Email */}
-            <form onSubmit={handleGenerate} className="p-4 sm:p-5 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-3.5">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 text-xs font-black text-slate-800 uppercase tracking-wider">
-                  <Plus className="w-4 h-4 text-indigo-600" />
-                  <span>Jana Kod Akses Baharu:</span>
+            {/* Mode Switcher: Jana Kod Akses OR Bagi Akses Terus Tanpa Kod */}
+            <div className="p-4 sm:p-5 rounded-2xl bg-slate-50 border border-slate-200/90 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-slate-200/80">
+                <div className="flex items-center gap-1.5 bg-white p-1 rounded-xl border border-slate-200 shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGeneratorMode('code');
+                      setGrantFeedback(null);
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      generatorMode === 'code'
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <KeyRound className="w-3.5 h-3.5" />
+                    <span>Jana Kod Akses (NK-XXXX)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGeneratorMode('direct');
+                      setGrantFeedback(null);
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      generatorMode === 'direct'
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>Auto Bagi Terus (Tanpa Kod)</span>
+                  </button>
                 </div>
-                {targetEmail && (
+
+                {generatorMode === 'code' && targetEmail && (
                   <button
                     type="button"
                     onClick={() => setTargetEmail('')}
@@ -351,69 +456,141 @@ export const AdminDashboardModal: React.FC<Props> = ({
                 )}
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
-                <div className="sm:col-span-2">
-                  <label className="block text-[11px] font-bold text-slate-600 mb-1">Bilangan Kod:</label>
-                  <select
-                    value={generateCount}
-                    onChange={(e) => setGenerateCount(Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-                  >
-                    <option value={1}>1 Kod</option>
-                    <option value={5}>5 Kod</option>
-                    <option value={10}>10 Kod</option>
-                    <option value={20}>20 Kod</option>
-                  </select>
-                </div>
-
-                <div className="sm:col-span-5">
-                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
-                    Emel Sasaran Murid (Pilihan):
-                  </label>
-                  <div className="relative">
-                    <Mail className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
-                    <input
-                      type="email"
-                      value={targetEmail}
-                      onChange={(e) => setTargetEmail(e.target.value)}
-                      placeholder="Contoh: murid@gmail.com (Kosongkan jika kod terbuka)"
-                      className="w-full pl-8 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                  </div>
-                </div>
-
-                <div className="sm:col-span-5">
-                  <label className="block text-[11px] font-bold text-slate-600 mb-1">Catatan / Kumpulan Murid:</label>
-                  <input
-                    type="text"
-                    value={generateNote}
-                    onChange={(e) => setGenerateNote(e.target.value)}
-                    placeholder="Contoh: Kelas Tuisyen SPM Cikgu Hafreez / MRSM"
-                    className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between pt-1">
-                <p className="text-[10px] text-slate-400">
-                  {targetEmail ? (
-                    <span className="text-indigo-600 font-bold">
-                      * Kod ini akan dikhaskan eksklusif hanya untuk akaun Google <b className="font-mono">{targetEmail}</b>.
-                    </span>
-                  ) : (
-                    '* Kod terbuka boleh ditebus oleh mana-mana 1 akaun Google calon (1 tebusan bagi setiap kod).'
-                  )}
-                </p>
-
-                <button
-                  type="submit"
-                  className="py-2.5 px-5 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-700 to-purple-700 hover:opacity-95 active:scale-98 text-white text-xs font-extrabold transition-all shadow-md shadow-indigo-500/25 cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
+              {grantFeedback && (
+                <div
+                  className={`p-3 rounded-xl text-xs font-bold border ${
+                    grantFeedback.type === 'success'
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                      : 'bg-rose-50 border-rose-200 text-rose-800'
+                  }`}
                 >
-                  <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                  <span>Jana Kod Sekarang</span>
-                </button>
-              </div>
-            </form>
+                  {grantFeedback.text}
+                </div>
+              )}
+
+              {generatorMode === 'code' ? (
+                <form onSubmit={handleGenerate} className="space-y-3.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                    <div className="sm:col-span-2">
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">Bilangan Kod:</label>
+                      <select
+                        value={generateCount}
+                        onChange={(e) => setGenerateCount(Number(e.target.value))}
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                      >
+                        <option value={1}>1 Kod</option>
+                        <option value={5}>5 Kod</option>
+                        <option value={10}>10 Kod</option>
+                        <option value={20}>20 Kod</option>
+                      </select>
+                    </div>
+
+                    <div className="sm:col-span-5">
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                        Emel Sasaran Murid (Pilihan):
+                      </label>
+                      <div className="relative">
+                        <Mail className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                        <input
+                          type="email"
+                          value={targetEmail}
+                          onChange={(e) => setTargetEmail(e.target.value)}
+                          placeholder="Contoh: murid@gmail.com (Kosongkan jika kod terbuka)"
+                          className="w-full pl-8 pr-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="sm:col-span-5">
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">Catatan / Kumpulan Murid:</label>
+                      <input
+                        type="text"
+                        value={generateNote}
+                        onChange={(e) => setGenerateNote(e.target.value)}
+                        placeholder="Contoh: Kelas Tuisyen SPM Cikgu Hafreez / MRSM"
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <p className="text-[10px] text-slate-400">
+                      {targetEmail ? (
+                        <span className="text-indigo-600 font-bold">
+                          * Kod ini akan dikhaskan eksklusif hanya untuk akaun Google <b className="font-mono">{targetEmail}</b>.
+                        </span>
+                      ) : (
+                        '* Kod terbuka boleh ditebus oleh mana-mana 1 akaun Google calon (1 tebusan bagi setiap kod).'
+                      )}
+                    </p>
+
+                    <button
+                      type="submit"
+                      className="py-2.5 px-5 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-700 to-purple-700 hover:opacity-95 active:scale-98 text-white text-xs font-extrabold transition-all shadow-md shadow-indigo-500/25 cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                      <span>Jana Kod Sekarang</span>
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <form onSubmit={handleDirectGrantSubmit} className="space-y-3.5">
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                    <div className="sm:col-span-6">
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                        Pilih atau Masukkan Emel Murid Berdaftar:
+                      </label>
+                      <input
+                        type="email"
+                        list="nota-kimia-students-datalist"
+                        value={directTargetEmail}
+                        onChange={(e) => setDirectTargetEmail(e.target.value)}
+                        placeholder="Pilih dari senarai atau taip emel Google murid..."
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        required
+                      />
+                      <datalist id="nota-kimia-students-datalist">
+                        {students
+                          .filter((s) => !s.isPremium)
+                          .map((s) => (
+                            <option key={s.email} value={s.email}>
+                              {s.name} ({s.school || 'Calon SPM'})
+                            </option>
+                          ))}
+                      </datalist>
+                    </div>
+
+                    <div className="sm:col-span-6">
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                        Catatan untuk Makluman:
+                      </label>
+                      <input
+                        type="text"
+                        value={directGrantNote}
+                        onChange={(e) => setDirectGrantNote(e.target.value)}
+                        placeholder="Contoh: Bayaran QR / Pelajar Tuisyen Khas / Hadiah Kuiz"
+                        className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1">
+                    <p className="text-[10px] text-slate-500">
+                      * Murid akan terus mendapat akses VIP Penuh secara automatik apabila mereka log masuk atau *refresh* halaman, tanpa perlu memasukkan sebarang kod.
+                    </p>
+
+                    <button
+                      type="submit"
+                      disabled={isGrantingVip}
+                      className="py-2.5 px-5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:opacity-95 text-white text-xs font-extrabold transition-all shadow-md shadow-emerald-500/20 cursor-pointer flex items-center justify-center gap-1.5 shrink-0 disabled:opacity-60"
+                    >
+                      <Zap className="w-3.5 h-3.5 text-amber-200" />
+                      <span>{isGrantingVip ? 'Mengaktifkan...' : 'Aktifkan VIP Terus'}</span>
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
 
             {/* Code Search & Filter Bar */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
@@ -688,6 +865,48 @@ export const AdminDashboardModal: React.FC<Props> = ({
               </div>
             </div>
 
+            {/* Inline Quick Direct VIP Grant Panel when triggered from Student Row */}
+            {directGrantStudentModal && (
+              <form
+                onSubmit={handleConfirmStudentDirectGrant}
+                className="p-4 rounded-2xl bg-emerald-50 border border-emerald-300 space-y-3 shadow-sm animate-in fade-in duration-150"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 text-xs font-black text-emerald-950">
+                    <Zap className="w-4 h-4 text-emerald-600" />
+                    <span>
+                      Auto Bagi Akses VIP Terus (Tanpa Kod) untuk{' '}
+                      <span className="underline">{directGrantStudentModal.name}</span> ({directGrantStudentModal.email})
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setDirectGrantStudentModal(null)}
+                    className="text-xs font-bold text-slate-500 hover:text-slate-800 cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                </div>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <input
+                    type="text"
+                    value={directGrantModalNote}
+                    onChange={(e) => setDirectGrantModalNote(e.target.value)}
+                    placeholder="Ruang Catatan untuk Makluman (cth: Bayaran QR / Pelajar Bimbingan / Hadiah)"
+                    className="flex-1 px-3 py-2 bg-white border border-emerald-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isGrantingVip}
+                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold cursor-pointer flex items-center justify-center gap-1.5 shrink-0 disabled:opacity-60"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>{isGrantingVip ? 'Mengaktifkan...' : 'Sahkan & Aktifkan VIP'}</span>
+                  </button>
+                </div>
+              </form>
+            )}
+
             {/* Students List Table with Real Emails & Quick Code Action */}
             <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
               <div className="overflow-x-auto">
@@ -786,26 +1005,64 @@ export const AdminDashboardModal: React.FC<Props> = ({
                               <span className="font-mono text-[10px] font-black text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
                                 {st.redeemedCode}
                               </span>
+                            ) : st.isPremium ? (
+                              <div className="space-y-0.5">
+                                <span className="inline-flex items-center gap-1 text-[10px] font-black text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                                  <Zap className="w-2.5 h-2.5 text-emerald-600" />
+                                  <span>Akses Terus Admin</span>
+                                </span>
+                                {st.directGrantNote && (
+                                  <div className="text-[10px] text-slate-600 max-w-[180px] truncate" title={st.directGrantNote}>
+                                    Catatan: {st.directGrantNote}
+                                  </div>
+                                )}
+                              </div>
                             ) : (
                               <span className="text-slate-400 text-[10px] italic">—</span>
                             )}
                           </td>
                           <td className="py-3 px-4 text-right">
                             {st.isPremium ? (
-                              <span className="text-[11px] font-bold text-emerald-700 inline-flex items-center gap-1">
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                                <span>Aktif</span>
-                              </span>
+                              <div className="inline-flex items-center gap-2">
+                                <span className="text-[11px] font-bold text-emerald-700 inline-flex items-center gap-1">
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                  <span>Aktif</span>
+                                </span>
+                                {!st.redeemedCode && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRevokeDirectVip(st)}
+                                    className="text-[10px] font-bold text-rose-600 hover:underline cursor-pointer"
+                                    title="Tarik balik akses VIP terus"
+                                  >
+                                    Tarik Balik
+                                  </button>
+                                )}
+                              </div>
                             ) : (
-                              <button
-                                type="button"
-                                onClick={() => handleAssignCodeForStudent(st)}
-                                className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 hover:text-indigo-900 text-[11px] font-bold transition-all cursor-pointer inline-flex items-center gap-1 shadow-2xs"
-                                title={`Jana kod khas untuk ${st.email}`}
-                              >
-                                <KeyRound className="w-3 h-3 text-indigo-600" />
-                                <span>Jana Kod Khas</span>
-                              </button>
+                              <div className="inline-flex items-center justify-end gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setDirectGrantStudentModal(st);
+                                    setDirectGrantModalNote('');
+                                  }}
+                                  className="px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 hover:text-emerald-900 text-[11px] font-bold transition-all cursor-pointer inline-flex items-center gap-1 shadow-2xs"
+                                  title={`Bagi akses VIP terus tanpa kod untuk ${st.email}`}
+                                >
+                                  <Zap className="w-3 h-3 text-emerald-600" />
+                                  <span>Bagi Terus</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleAssignCodeForStudent(st)}
+                                  className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 hover:text-indigo-900 text-[11px] font-bold transition-all cursor-pointer inline-flex items-center gap-1 shadow-2xs"
+                                  title={`Jana kod khas untuk ${st.email}`}
+                                >
+                                  <KeyRound className="w-3 h-3 text-indigo-600" />
+                                  <span>Jana Kod</span>
+                                </button>
+                              </div>
                             )}
                           </td>
                         </tr>

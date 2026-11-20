@@ -34,7 +34,13 @@ import {
   hasFullAccess,
   incrementExamAttempts,
 } from './utils/auth';
-import { syncUserProfile, logKeluarFirebase, subscribeAuthState } from './services/firebase';
+import {
+  syncUserProfile,
+  syncUserProgressRemote,
+  refreshCurrentUserFromRemote,
+  logKeluarFirebase,
+  subscribeAuthState,
+} from './services/firebase';
 
 export const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<'dashboard' | 'reader'>('dashboard');
@@ -92,15 +98,15 @@ export const App: React.FC = () => {
     };
     window.addEventListener('auth_state_changed', handleAuthChange);
 
-    const unsubscribe = subscribeAuthState((fbUser) => {
+    const unsubscribe = subscribeAuthState(async (fbUser) => {
       const localUser = getCurrentUser();
       const localEmail = localUser?.email?.toLowerCase().trim() || null;
       if (fbUser && localUser && localEmail && fbUser.uid === localUser.id) {
+        await refreshCurrentUserFromRemote(localUser);
         const scopedProgress = getInitialProgress(localEmail);
         const { completedCount, quizAccuracy, userXP } = computeUserStats(scopedProgress);
 
-        syncUserProfile({
-          ...localUser,
+        syncUserProgressRemote(fbUser.uid, {
           xp: userXP,
           completedSubtopicsCount: completedCount,
           quizAccuracy,
@@ -123,8 +129,7 @@ export const App: React.FC = () => {
 
     const { completedCount, quizAccuracy, userXP } = computeUserStats(userProgress);
 
-    syncUserProfile({
-      ...currentUser,
+    syncUserProgressRemote(currentUser.id, {
       xp: userXP,
       completedSubtopicsCount: completedCount,
       quizAccuracy,

@@ -175,6 +175,9 @@ export async function loginDenganGoogleReal(): Promise<{
     quizAccuracy: existingProfile?.quizAccuracy || 0,
     badgesCount: existingProfile?.badgesCount || 0,
     ...(existingProfile?.studyProgress ? { studyProgress: existingProfile.studyProgress } : {}),
+    ...(existingProfile?.directGrantNote ? { directGrantNote: existingProfile.directGrantNote } : {}),
+    ...(existingProfile?.directGrantedAt ? { directGrantedAt: existingProfile.directGrantedAt } : {}),
+    ...(existingProfile?.directGrantedBy ? { directGrantedBy: existingProfile.directGrantedBy } : {}),
   };
 
   // Restore this specific user's saved studyProgress into their scoped localStorage key
@@ -228,6 +231,147 @@ export async function syncUserProfile(user: GoogleUser): Promise<boolean> {
     return true;
   } catch (err) {
     console.warn('Firestore write warning:', err);
+    return false;
+  }
+}
+
+/**
+ * Sync ONLY progress/XP fields so student sessions never overwrite admin-granted isPremium flags
+ */
+export async function syncUserProgressRemote(
+  uid: string,
+  stats: {
+    xp: number;
+    completedSubtopicsCount: number;
+    quizAccuracy: number;
+    studyProgress?: any;
+  }
+): Promise<boolean> {
+  const fbUser = auth.currentUser;
+  if (!fbUser || fbUser.uid !== uid) return false;
+  try {
+    const userDocRef = doc(db, 'nota_kimia_users', uid);
+    await setDoc(
+      userDocRef,
+      stripUndefined({
+        ...stats,
+        lastLoginAt: Date.now(),
+      }),
+      { merge: true }
+    );
+    return true;
+  } catch (err) {
+    console.warn('Firestore progress sync warning:', err);
+    return false;
+  }
+}
+
+/**
+ * Fetch latest user profile from Firestore (e.g., to pick up direct VIP grant from Admin on refresh)
+ */
+export async function refreshCurrentUserFromRemote(localUser: GoogleUser): Promise<GoogleUser | null> {
+  const fbUser = auth.currentUser;
+  if (!fbUser || fbUser.uid !== localUser.id) return null;
+  try {
+    const userDocRef = doc(db, 'nota_kimia_users', fbUser.uid);
+    const snap = await getDoc(userDocRef);
+    if (!snap.exists()) return null;
+    const remote = snap.data() as Partial<GoogleUser>;
+    const isAdmin = isAdminEmail(localUser.email);
+    const merged: GoogleUser = {
+      ...localUser,
+      isPremium: isAdmin ? true : (remote.isPremium ?? localUser.isPremium),
+      ...(remote.redeemedCode ? { redeemedCode: remote.redeemedCode } : {}),
+      ...(remote.directGrantNote !== undefined ? { directGrantNote: remote.directGrantNote } : {}),
+      ...(remote.directGrantedAt !== undefined ? { directGrantedAt: remote.directGrantedAt } : {}),
+      ...(remote.directGrantedBy !== undefined ? { directGrantedBy: remote.directGrantedBy } : {}),
+    };
+    if (
+      merged.isPremium !== localUser.isPremium ||
+      merged.directGrantNote !== localUser.directGrantNote ||
+      merged.redeemedCode !== localUser.redeemedCode
+    ) {
+      saveCurrentUser(merged);
+    }
+    return merged;
+  } catch (err) {
+    console.warn('Refresh user remote warning:', err);
+    return null;
+  }
+}
+
+/**
+ * Admin: Directly grant VIP full access to a registered student without requiring an access code
+ */
+export async function grantDirectVipAccessRemote(
+  student: GoogleUser,
+  note: string,
+  adminEmail: string
+): Promise<boolean> {
+  const cleanNote = note.trim() || 'Akses VIP diberi terus oleh Pentadbir';
+  const now = Date.now();
+  const updatedStudent: GoogleUser = {
+    ...student,
+    isPremium: true,
+    directGrantNote: cleanNote,
+    directGrantedAt: now,
+    directGrantedBy: adminEmail.toLowerCase().trim(),
+  };
+
+  saveRegisteredProfile(updatedStudent);
+
+  if (!auth.currentUser) return false;
+  try {
+    const docId = student.id || student.email.toLowerCase().trim();
+    const userDocRef = doc(db, 'nota_kimia_users', docId);
+    await setDoc(
+      userDocRef,
+      stripUndefined({
+        isPremium: true,
+        directGrantNote: cleanNote,
+        directGrantedAt: now,
+        directGrantedBy: adminEmail.toLowerCase().trim(),
+      }),
+      { merge: true }
+    );
+    return true;
+  } catch (err) {
+    console.warn('Firestore direct grant error:', err);
+    return false;
+  }
+}
+
+/**
+ * Admin: Revoke direct VIP access from a student
+ */
+export async function revokeDirectVipAccessRemote(student: GoogleUser): Promise<boolean> {
+  const updatedStudent: GoogleUser = {
+    ...student,
+    isPremium: false,
+    directGrantNote: '',
+    directGrantedAt: 0,
+    directGrantedBy: '',
+  };
+
+  saveRegisteredProfile(updatedStudent);
+
+  if (!auth.currentUser) return false;
+  try {
+    const docId = student.id || student.email.toLowerCase().trim();
+    const userDocRef = doc(db, 'nota_kimia_users', docId);
+    await setDoc(
+      userDocRef,
+      {
+        isPremium: false,
+        directGrantNote: '',
+        directGrantedAt: 0,
+        directGrantedBy: '',
+      },
+      { merge: true }
+    );
+    return true;
+  } catch (err) {
+    console.warn('Firestore revoke VIP error:', err);
     return false;
   }
 }
